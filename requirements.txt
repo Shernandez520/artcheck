@@ -1,0 +1,8 @@
+streamlit
+Pillow
+cairosvg
+numpy
+pyembroidery
+reportlab
+svglib
+pypdf
