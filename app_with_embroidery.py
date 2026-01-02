@@ -234,23 +234,36 @@ class PreviewGenerator:
             st.warning(f"PDF conversion failed: {str(e)}")
             return False
     
-    def _convert_eps_ai_with_pillow(self, input_file, output_file):
-        """Try to convert EPS/AI using Pillow (requires Ghostscript)"""
+    def _convert_eps_ai_with_ghostscript(self, input_file, output_file):
+        """Convert EPS/AI using Ghostscript directly for high-quality rendering"""
         try:
-            # Pillow can handle EPS if Ghostscript is available
-            img = Image.open(input_file)
-            img.load()  # Force rendering
+            import subprocess
             
-            # Convert to RGB if necessary
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
+            # Use ghostscript directly for high-quality conversion
+            # -r300 = 300 DPI for crisp output
+            gs_cmd = [
+                'gs',
+                '-dNOPAUSE',
+                '-dBATCH',
+                '-dSAFER',
+                '-sDEVICE=png16m',
+                '-r300',  # 300 DPI
+                '-dTextAlphaBits=4',  # Anti-aliasing for text
+                '-dGraphicsAlphaBits=4',  # Anti-aliasing for graphics
+                f'-sOutputFile={output_file}',
+                input_file
+            ]
             
-            # Resize if needed
-            if img.width > self.PREVIEW_MAX_WIDTH or img.height > self.PREVIEW_MAX_HEIGHT:
-                img.thumbnail((self.PREVIEW_MAX_WIDTH, self.PREVIEW_MAX_HEIGHT), Image.Resampling.LANCZOS)
+            result = subprocess.run(gs_cmd, capture_output=True, timeout=60)
             
-            img.save(output_file, 'PNG')
-            return True
+            if result.returncode == 0 and os.path.exists(output_file):
+                # Resize if too large (keeping quality)
+                img = Image.open(output_file)
+                if img.width > self.PREVIEW_MAX_WIDTH or img.height > self.PREVIEW_MAX_HEIGHT:
+                    img.thumbnail((self.PREVIEW_MAX_WIDTH, self.PREVIEW_MAX_HEIGHT), Image.Resampling.LANCZOS)
+                    img.save(output_file, 'PNG', quality=95)
+                return True
+            return False
         except Exception as e:
             st.warning(f"EPS/AI conversion failed: {str(e)}")
             return False
@@ -326,7 +339,7 @@ class PreviewGenerator:
         elif ext == '.pdf':
             conversion_success = self._convert_pdf_with_pdf2image(input_file, output_file)
         elif ext in ['.eps', '.ai']:
-            conversion_success = self._convert_eps_ai_with_pillow(input_file, output_file)
+            conversion_success = self._convert_eps_ai_with_ghostscript(input_file, output_file)
         elif ext in ['.cdr', '.xcf']:
             st.error(f"{ext.upper()} files require desktop conversion tools. Please export as PDF or SVG.")
             return None
