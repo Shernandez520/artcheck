@@ -6,3 +6,4 @@ pyembroidery
 reportlab
 svglib
 pypdf
+pdf2image
