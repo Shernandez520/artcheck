@@ -241,6 +241,7 @@ class PreviewGenerator:
             
             # Use ghostscript directly for high-quality conversion
             # -r300 = 300 DPI for crisp output
+            # -dEPSCrop = Crop to artwork bounding box, not full page
             gs_cmd = [
                 'gs',
                 '-dNOPAUSE',
@@ -250,6 +251,7 @@ class PreviewGenerator:
                 '-r300',  # 300 DPI
                 '-dTextAlphaBits=4',  # Anti-aliasing for text
                 '-dGraphicsAlphaBits=4',  # Anti-aliasing for graphics
+                '-dEPSCrop',  # Crop to bounding box instead of full page
                 f'-sOutputFile={output_file}',
                 input_file
             ]
