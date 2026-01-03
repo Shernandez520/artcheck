@@ -1,7 +1,6 @@
 """
-ArtCheck - Enhanced with Embroidery File Support + Ask ArtBot
+ArtCheck - Enhanced with Embroidery File Support
 Handles vector files AND embroidery files (.dst, .pes, .exp, etc.)
-NOW WITH: AI-powered production artist assistant
 CLOUD-OPTIMIZED VERSION - Uses CairoSVG, pdf2image, reportlab instead of Inkscape/ImageMagick
 """
 
@@ -12,7 +11,6 @@ from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 import shutil
 import tempfile
-import json
 
 st.set_page_config(
     page_title="ArtCheck - Preview Generator",
@@ -53,23 +51,107 @@ st.markdown("""
         border-left: 4px solid #1976d2;
         margin: 1rem 0;
     }
-    .artbot-answer {
-        padding: 1.5rem;
-        border-radius: 0.5rem;
-        background: #f8f9fa;
-        border-left: 4px solid #667eea;
-        margin: 1rem 0;
-        font-size: 1rem;
-        line-height: 1.6;
-    }
-    .artbot-header {
-        color: #667eea;
-        font-weight: bold;
-        font-size: 1.1rem;
-        margin-bottom: 0.5rem;
-    }
 </style>
 """, unsafe_allow_html=True)
+
+
+class EmbroideryConverter:
+    """Handles embroidery file conversion to PNG"""
+    
+    EMBROIDERY_FORMATS = ['.dst', '.pes', '.exp', '.jef', '.vp3', '.xxx', '.u01']
+    
+    def __init__(self):
+        try:
+            import pyembroidery
+            self.pyembroidery = pyembroidery
+            self.available = True
+        except ImportError:
+            self.pyembroidery = None
+            self.available = False
+    
+    def is_embroidery_file(self, filename):
+        """Check if file is an embroidery format"""
+        return Path(filename).suffix.lower() in self.EMBROIDERY_FORMATS
+    
+    def convert_to_png(self, input_file, output_file, width=1200, height=800):
+        """Convert embroidery file to PNG visualization"""
+        if not self.available:
+            return False, "pyembroidery not installed"
+        
+        try:
+            # Read embroidery file
+            pattern = self.pyembroidery.read(str(input_file))
+            
+            # Create visualization
+            img = Image.new('RGB', (width, height), 'white')
+            draw = ImageDraw.Draw(img)
+            
+            # Get pattern bounds
+            bounds = pattern.bounds()
+            if not bounds or len(bounds) != 4:
+                return False, "Could not determine pattern bounds"
+            
+            min_x, min_y, max_x, max_y = bounds
+            
+            # Calculate scaling
+            pattern_width = max_x - min_x
+            pattern_height = max_y - min_y
+            
+            if pattern_width == 0 or pattern_height == 0:
+                return False, "Pattern has zero dimensions"
+            
+            # Add margins
+            margin = 50
+            scale_x = (width - 2 * margin) / pattern_width
+            scale_y = (height - 2 * margin) / pattern_height
+            scale = min(scale_x, scale_y)
+            
+            # Center the pattern
+            offset_x = margin + (width - 2 * margin - pattern_width * scale) / 2
+            offset_y = margin + (height - 2 * margin - pattern_height * scale) / 2
+            
+            # Draw stitches
+            prev_x = prev_y = None
+            current_color = (0, 0, 0)  # Default black
+            
+            for stitch in pattern.stitches:
+                x, y = stitch[0], stitch[1]
+                flags = stitch[2] if len(stitch) > 2 else 0
+                
+                # Scale and translate coordinates
+                screen_x = offset_x + (x - min_x) * scale
+                screen_y = offset_y + (y - min_y) * scale
+                
+                # Handle color changes
+                if flags & self.pyembroidery.TRIM or flags & self.pyembroidery.COLOR_CHANGE:
+                    prev_x = prev_y = None
+                
+                # Draw stitch line
+                if prev_x is not None and not (flags & self.pyembroidery.JUMP):
+                    draw.line(
+                        [(prev_x, prev_y), (screen_x, screen_y)],
+                        fill=current_color,
+                        width=2
+                    )
+                
+                prev_x, prev_y = screen_x, screen_y
+            
+            # Save image
+            img.save(output_file, 'PNG')
+            
+            # Get pattern info
+            stitch_count = len(pattern.stitches)
+            thread_changes = sum(1 for s in pattern.stitches if len(s) > 2 and (s[2] & self.pyembroidery.COLOR_CHANGE))
+            
+            return True, {
+                'stitch_count': stitch_count,
+                'thread_changes': thread_changes,
+                'width_mm': round(pattern_width / 10, 2),  # Convert to mm
+                'height_mm': round(pattern_height / 10, 2)
+            }
+            
+        except Exception as e:
+            return False, f"Conversion error: {str(e)}"
 
 
 # ============================================================================
@@ -201,105 +283,6 @@ def ask_artbot(question, conversation_history=None):
 # ORIGINAL ARTCHECK CODE (Embroidery + Vector handling)
 # ============================================================================
 
-class EmbroideryConverter:
-    """Handles embroidery file conversion to PNG"""
-    
-    EMBROIDERY_FORMATS = ['.dst', '.pes', '.exp', '.jef', '.vp3', '.xxx', '.u01']
-    
-    def __init__(self):
-        try:
-            import pyembroidery
-            self.pyembroidery = pyembroidery
-            self.available = True
-        except ImportError:
-            self.pyembroidery = None
-            self.available = False
-    
-    def is_embroidery_file(self, filename):
-        """Check if file is an embroidery format"""
-        return Path(filename).suffix.lower() in self.EMBROIDERY_FORMATS
-    
-    def convert_to_png(self, input_file, output_file, width=1200, height=800):
-        """Convert embroidery file to PNG visualization"""
-        if not self.available:
-            return False, "pyembroidery not installed"
-        
-        try:
-            # Read embroidery file
-            pattern = self.pyembroidery.read(str(input_file))
-            
-            # Create visualization
-            img = Image.new('RGB', (width, height), 'white')
-            draw = ImageDraw.Draw(img)
-            
-            # Get pattern bounds
-            bounds = pattern.bounds()
-            if not bounds or len(bounds) != 4:
-                return False, "Could not determine pattern bounds"
-            
-            min_x, min_y, max_x, max_y = bounds
-            
-            # Calculate scaling
-            pattern_width = max_x - min_x
-            pattern_height = max_y - min_y
-            
-            if pattern_width == 0 or pattern_height == 0:
-                return False, "Pattern has zero dimensions"
-            
-            # Add margins
-            margin = 50
-            scale_x = (width - 2 * margin) / pattern_width
-            scale_y = (height - 2 * margin) / pattern_height
-            scale = min(scale_x, scale_y)
-            
-            # Center the pattern
-            offset_x = margin + (width - 2 * margin - pattern_width * scale) / 2
-            offset_y = margin + (height - 2 * margin - pattern_height * scale) / 2
-            
-            # Draw stitches
-            prev_x = prev_y = None
-            current_color = (0, 0, 0)  # Default black
-            
-            for stitch in pattern.stitches:
-                x, y = stitch[0], stitch[1]
-                flags = stitch[2] if len(stitch) > 2 else 0
-                
-                # Scale and translate coordinates
-                screen_x = offset_x + (x - min_x) * scale
-                screen_y = offset_y + (y - min_y) * scale
-                
-                # Handle color changes
-                if flags & self.pyembroidery.TRIM or flags & self.pyembroidery.COLOR_CHANGE:
-                    prev_x = prev_y = None
-                
-                # Draw stitch line
-                if prev_x is not None and not (flags & self.pyembroidery.JUMP):
-                    draw.line(
-                        [(prev_x, prev_y), (screen_x, screen_y)],
-                        fill=current_color,
-                        width=2
-                    )
-                
-                prev_x, prev_y = screen_x, screen_y
-            
-            # Save image
-            img.save(output_file, 'PNG')
-            
-            # Get pattern info
-            stitch_count = len(pattern.stitches)
-            thread_changes = sum(1 for s in pattern.stitches if len(s) > 2 and (s[2] & self.pyembroidery.COLOR_CHANGE))
-            
-            return True, {
-                'stitch_count': stitch_count,
-                'thread_changes': thread_changes,
-                'width_mm': round(pattern_width / 10, 2),  # Convert to mm
-                'height_mm': round(pattern_height / 10, 2)
-            }
-            
-        except Exception as e:
-            return False, f"Conversion error: {str(e)}"
-
-
 class PreviewGenerator:
     """Handles conversion of vector files to PNG previews - CLOUD OPTIMIZED"""
     
@@ -353,14 +336,101 @@ class PreviewGenerator:
             st.warning(f"CairoSVG conversion failed: {str(e)}")
             return False
     
+    def _convert_pdf_with_pdf2image(self, input_file, output_file):
+        """Convert PDF to PNG using pdf2image (uses poppler)"""
+        if not self.has_pdf2image:
+            return False
+        
+        try:
+            images = self.pdf2image_convert(
+                input_file,
+                dpi=200,
+                first_page=1,
+                last_page=1,
+                fmt='png'
+            )
+            
+            if images:
+                # Resize if too large
+                img = images[0]
+                if img.width > self.PREVIEW_MAX_WIDTH or img.height > self.PREVIEW_MAX_HEIGHT:
+                    img.thumbnail((self.PREVIEW_MAX_WIDTH, self.PREVIEW_MAX_HEIGHT), Image.Resampling.LANCZOS)
+                
+                img.save(output_file, 'PNG')
+                return True
+            return False
+        except Exception as e:
+            st.warning(f"PDF conversion failed: {str(e)}")
+            return False
+    
+    def _convert_eps_ai_with_pillow(self, input_file, output_file):
+        """Try to convert EPS/AI using Pillow (requires Ghostscript)"""
+        try:
+            # Pillow can handle EPS if Ghostscript is available
+            img = Image.open(input_file)
+            img.load()  # Force rendering
+            
+            # Convert to RGB if necessary
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Resize if needed
+            if img.width > self.PREVIEW_MAX_WIDTH or img.height > self.PREVIEW_MAX_HEIGHT:
+                img.thumbnail((self.PREVIEW_MAX_WIDTH, self.PREVIEW_MAX_HEIGHT), Image.Resampling.LANCZOS)
+            
+            img.save(output_file, 'PNG')
+            return True
+        except Exception as e:
+            st.warning(f"EPS/AI conversion failed: {str(e)}")
+            return False
+    
+    def extract_pantone_colors(self, file_path):
+        """Extract Pantone spot colors from vector file"""
+        try:
+            ext = Path(file_path).suffix.lower()
+            
+            # Only extract from AI/EPS/PDF/SVG
+            if ext not in ['.ai', '.eps', '.pdf', '.svg']:
+                return []
+            
+            # Read file content
+            try:
+                with open(file_path, 'rb') as f:
+                    content = f.read()
+                    text = content.decode('latin-1', errors='ignore')
+            except:
+                return []
+            
+            import re
+            
+            # Look for Pantone color definitions
+            pantone_patterns = [
+                r'PANTONE\s+(\d+(?:-\d+)?)\s*([A-Z]{1,3})',  # PANTONE 293 U, etc.
+                r'/\(PANTONE\s+(\d+(?:-\d+)?)\s*([A-Z]{1,3})\)',
+                r'%%CMYKCustomColor:.*PANTONE\s+(\d+(?:-\d+)?)\s*([A-Z]{1,3})',
+            ]
+            
+            pantone_set = set()
+            for pattern in pantone_patterns:
+                matches = re.finditer(pattern, text, re.IGNORECASE)
+                for match in matches:
+                    number = match.group(1)
+                    variant = match.group(2).upper()
+                    pantone_name = f"PANTONE {number} {variant}"
+                    pantone_set.add(pantone_name)
+            
+            return sorted(list(pantone_set))
+        except:
+            return []
+    
     def generate_preview(self, input_file, bg_type='auto'):
-        """Generate preview from vector or embroidery file"""
+        """Generate preview with all features"""
         ext = Path(input_file).suffix.lower()
         
-        # Handle embroidery files
+        # Check if embroidery file
         if self.embroidery.is_embroidery_file(input_file):
             output_file = tempfile.mktemp(suffix='.png')
-            success, result = self.embroidery.convert_to_png(input_file, output_file)
+            success, info = self.embroidery.convert_to_png(input_file, output_file)
             
             if success:
                 img = Image.open(output_file)
@@ -368,55 +438,83 @@ class PreviewGenerator:
                     'image': output_file,
                     'width': img.width,
                     'height': img.height,
-                    'size_kb': round(os.path.getsize(output_file) / 1024, 2),
                     'file_type': 'embroidery',
-                    'embroidery_info': result
+                    'size_kb': round(os.path.getsize(output_file) / 1024, 2),
+                    'embroidery_info': info
                 }
             else:
-                st.error(f"Embroidery conversion failed: {result}")
                 return None
         
-        # Handle vector files (simplified version - full code would be longer)
+        # Vector file processing
         output_file = tempfile.mktemp(suffix='.png')
+        conversion_success = False
         
-        # Try conversion methods based on file type
-        success = False
+        # Try conversion based on file type
         if ext == '.svg':
-            success = self._convert_svg_with_cairosvg(input_file, output_file)
+            conversion_success = self._convert_svg_with_cairosvg(input_file, output_file)
+        elif ext == '.pdf':
+            conversion_success = self._convert_pdf_with_pdf2image(input_file, output_file)
+        elif ext in ['.eps', '.ai']:
+            conversion_success = self._convert_eps_ai_with_pillow(input_file, output_file)
+        elif ext in ['.cdr', '.xcf']:
+            st.error(f"{ext.upper()} files require desktop conversion tools. Please export as PDF or SVG.")
+            return None
         
-        if success and os.path.exists(output_file):
-            img = Image.open(output_file)
-            return {
-                'image': output_file,
-                'width': img.width,
-                'height': img.height,
-                'size_kb': round(os.path.getsize(output_file) / 1024, 2),
-                'file_type': 'vector'
+        if not conversion_success:
+            st.error(f"Failed to convert {ext} file. Please try exporting as PDF or SVG.")
+            return None
+        
+        # Extract Pantone colors
+        pantone_colors = self.extract_pantone_colors(input_file)
+        
+        # Get image info
+        img = Image.open(output_file)
+        
+        # Calculate physical size at 300 DPI
+        width_inches = round(img.width / 300, 2)
+        height_inches = round(img.height / 300, 2)
+        
+        result = {
+            'image': output_file,
+            'width': img.width,
+            'height': img.height,
+            'file_type': 'vector',
+            'size_kb': round(os.path.getsize(output_file) / 1024, 2),
+            'physical_size': {
+                'width_inches': width_inches,
+                'height_inches': height_inches,
+                'dpi': 300
             }
+        }
         
-        return None
+        # Add Pantone colors if found
+        if pantone_colors:
+            result['pantone_colors'] = pantone_colors
+        
+        return result
 
 
-def save_as_pdf(image_path, pdf_path):
-    """Save preview as PDF"""
+def save_as_pdf(image_path, output_pdf):
+    """Convert preview image to PDF"""
     try:
-        from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
         from reportlab.lib.utils import ImageReader
         
         img = Image.open(image_path)
-        c = canvas.Canvas(pdf_path, pagesize=letter)
+        
+        # Create PDF
+        c = canvas.Canvas(output_pdf, pagesize=letter)
+        
+        # Calculate dimensions to fit on page
         page_width, page_height = letter
+        margin = 50
         
-        # Calculate scaling
-        img_aspect = img.width / img.height
-        page_aspect = page_width / page_height
+        max_width = page_width - 2 * margin
+        max_height = page_height - 2 * margin
         
-        if img_aspect > page_aspect:
-            scale = page_width / img.width * 0.9
-        else:
-            scale = page_height / img.height * 0.9
-        
+        # Scale image to fit
+        scale = min(max_width / img.width, max_height / img.height)
         new_width = img.width * scale
         new_height = img.height * scale
         
@@ -434,88 +532,23 @@ def save_as_pdf(image_path, pdf_path):
         return False
 
 
-# ============================================================================
-# MAIN APP
-# ============================================================================
+# Main App
+st.markdown('<h1 class="main-header">🎨 ArtCheck - IT WORKS!</h1>', unsafe_allow_html=True)
+st.markdown('<p class="tagline">Vector & Embroidery File Preview Generator</p>', unsafe_allow_html=True)
 
-st.markdown('<h1 class="main-header">🎨 ArtCheck</h1>', unsafe_allow_html=True)
-st.markdown('<p class="tagline">Vector & Embroidery File Preview Generator + AI Production Assistant</p>', unsafe_allow_html=True)
-
-# ============================================================================
-# SIDEBAR - ASK ARTBOT
-# ============================================================================
-
+# Sidebar
 with st.sidebar:
-    st.markdown("### 🤖 Ask ArtBot")
-    st.caption("Your AI production assistant - 20+ years of industry knowledge")
+    st.header("💬 Ask Art Department")
     
-    # Question input
-    question = st.text_area(
-        "Ask about file requirements, decoration methods, or art issues",
-        placeholder="e.g., What file format for embroidery?",
-        height=100,
-        key="artbot_question"
-    )
-    
-    # Ask button
-    if st.button("🚀 Ask ArtBot", use_container_width=True, type="primary"):
-        if question.strip():
-            with st.spinner("🤖 ArtBot is thinking..."):
-                # Initialize conversation history in session state if needed
-                if 'artbot_history' not in st.session_state:
-                    st.session_state.artbot_history = []
-                
-                # Get answer
-                answer = ask_artbot(question, st.session_state.artbot_history)
-                
-                # Store in history
-                st.session_state.artbot_history.append({
-                    "role": "user",
-                    "content": question
-                })
-                st.session_state.artbot_history.append({
-                    "role": "assistant", 
-                    "content": answer
-                })
-                
-                # Display answer
-                st.markdown('<div class="artbot-answer">', unsafe_allow_html=True)
-                st.markdown(f'<div class="artbot-header">🤖 ArtBot:</div>', unsafe_allow_html=True)
-                st.markdown(answer)
-                st.markdown('</div>', unsafe_allow_html=True)
-        else:
-            st.warning("Please enter a question")
-    
-    # Clear conversation
-    if 'artbot_history' in st.session_state and len(st.session_state.artbot_history) > 0:
-        if st.button("🔄 Clear Conversation", use_container_width=True):
-            st.session_state.artbot_history = []
-            st.rerun()
-    
-    # Example questions
-    with st.expander("💡 Example Questions"):
-        examples = [
-            "What file format for screen printing?",
-            "How many colors for embroidery?",
-            "What DPI for a 2 inch logo?",
-            "Can I use gradients on shirts?",
-            "What's wrong with my Pantone colors?",
-            "Difference between vector and raster?",
-            "What's a stitch count?",
-            "Why did my file get rejected?"
-        ]
-        for ex in examples:
-            st.markdown(f"• {ex}")
+    if st.button("📥 Submit Question", use_container_width=True):
+        st.info("Feature coming soon! For now, check the FAQ below.")
     
     st.divider()
     
     st.markdown("**💡 Save your art team 15+ hours/week**")
-    st.caption("Instant previews + AI answers = fewer interruptions")
+    st.caption("Instant previews = fewer interruptions")
 
-# ============================================================================
-# FILE UPLOAD SECTION
-# ============================================================================
-
+# File Upload Section
 st.markdown("## 📁 Upload Your File")
 
 vector_formats = ".ai, .eps, .pdf, .svg, .cdr, .xcf"
@@ -586,7 +619,37 @@ if uploaded_file:
                 st.markdown('<div class="success-box">✅ Preview generated successfully!</div>', 
                           unsafe_allow_html=True)
                 
-                # Display preview and info
+                # FILE TYPE BANNER
+                if result.get('file_type') == 'vector':
+                    st.markdown("""
+                    <div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); 
+                                padding: 30px; 
+                                border-radius: 15px; 
+                                text-align: center;
+                                margin: 20px 0;
+                                border: 4px solid #11998e;">
+                        <h1 style="color: white; margin: 0; font-size: 48px;">✅ VECTOR FILE</h1>
+                        <p style="color: white; margin: 10px 0 0 0; font-size: 24px; font-weight: bold;">
+                            Scalable • Print-Ready • High Quality
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                elif result.get('file_type') == 'embroidery':
+                    st.markdown("""
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                                padding: 30px; 
+                                border-radius: 15px; 
+                                text-align: center;
+                                margin: 20px 0;
+                                border: 4px solid #667eea;">
+                        <h1 style="color: white; margin: 0; font-size: 48px;">🧵 EMBROIDERY FILE</h1>
+                        <p style="color: white; margin: 10px 0 0 0; font-size: 24px; font-weight: bold;">
+                            Stitch Data • Production Ready
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Layout: Preview + Info
                 col1, col2 = st.columns([2, 1])
                 
                 with col1:
@@ -595,9 +658,27 @@ if uploaded_file:
                 with col2:
                     st.markdown("### Preview Info")
                     st.metric("Dimensions", f"{result['width']} × {result['height']} px")
-                    st.metric("File Size", f"{result['size_kb']} KB")
-                    st.metric("File Type", result['file_type'].title())
                     
+                    # Physical size
+                    if 'physical_size' in result:
+                        phys = result['physical_size']
+                        st.metric("Physical Size", f"{phys['width_inches']}\" × {phys['height_inches']}\"")
+                        st.caption(f"At {phys['dpi']} DPI • Vector = scales to any size")
+                    
+                    st.metric("File Size", f"{result['size_kb']} KB")
+                    st.metric("Background", bg_type.title())
+                    
+                    st.markdown("---")
+                    
+                    # PANTONE COLORS (only show if detected)
+                    if 'pantone_colors' in result and result['pantone_colors']:
+                        st.markdown("### 🎨 Pantone Spot Colors")
+                        st.success(f"✓ **{len(result['pantone_colors'])} Pantone colors detected**")
+                        for pantone in result['pantone_colors']:
+                            st.markdown(f"### **{pantone}**")
+                        st.markdown("")
+                    
+                    # Embroidery info
                     if 'embroidery_info' in result:
                         emb = result['embroidery_info']
                         st.markdown("### 🧵 Embroidery Info")
@@ -607,7 +688,10 @@ if uploaded_file:
                     
                     st.markdown("---")
                     
-                    # Download preview
+                    # Download buttons
+                    st.markdown("### 📥 Download")
+                    
+                    # Download preview PNG
                     with open(result['image'], 'rb') as f:
                         st.download_button(
                             label="⬇️ Download Preview (PNG)",
@@ -616,12 +700,27 @@ if uploaded_file:
                             mime="image/png",
                             use_container_width=True
                         )
+                    
+                    # Convert to PDF
+                    if result.get('file_type') == 'vector':
+                        if st.button("📄 Convert to PDF", use_container_width=True):
+                            pdf_path = tempfile.mktemp(suffix='.pdf')
+                            if save_as_pdf(result['image'], pdf_path):
+                                with open(pdf_path, 'rb') as f:
+                                    st.download_button(
+                                        label="⬇️ Download PDF",
+                                        data=f,
+                                        file_name=f"{Path(uploaded_file.name).stem}.pdf",
+                                        mime="application/pdf",
+                                        use_container_width=True
+                                    )
+                                os.unlink(pdf_path)
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>
     <p>Built with ❤️ for promotional products professionals</p>
-    <p>🤖 AI-powered answers • 📁 Instant previews • ⏱️ Save 15+ hours/week</p>
+    <p>Save your art department 15+ hours per week</p>
 </div>
 """, unsafe_allow_html=True)
