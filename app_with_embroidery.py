@@ -203,38 +203,17 @@ def ask_artbot(question, conversation_history=None):
             "content": question
         })
         
-        # Note: In production Streamlit Cloud, you'd use st.secrets for the API key
-        # For now, this shows the structure - API key would come from environment
-        # The actual API call would happen here, but since we can't make external
-        # API calls in this demo, we'll return a helpful message
+        import anthropic
         
-        # This is where the actual API call would be:
-        # client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
-        # response = client.messages.create(
-        #     model="claude-sonnet-4-20250514",
-        #     max_tokens=1000,
-        #     system=ARTBOT_SYSTEM_PROMPT,
-        #     messages=messages
-        # )
-        # return response.content[0].text
-        
-        # For demo purposes, return a template answer
-        return f"""I'm ArtBot, your production assistant! 🤖
-
-To activate me, you'll need to:
-1. Add your Anthropic API key to Streamlit secrets
-2. Install the `anthropic` package
-3. Uncomment the API call in the code
-
-Once set up, I can answer questions like:
-- "What file format do I need for screen printing?"
-- "How many colors can embroidery handle?"
-- "Why is my Pantone color wrong?"
-- "What DPI for a 2 inch logo?"
-
-Your question: "{question}"
-
-*This is a demo response. Configure API key to enable full functionality.*"""
+        # Call Anthropic API
+        client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1000,
+            system=ARTBOT_SYSTEM_PROMPT,
+            messages=messages
+        )
+        return response.content[0].text
         
     except Exception as e:
         return f"⚠️ ArtBot error: {str(e)}\n\nPlease check your API configuration."
