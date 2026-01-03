@@ -305,6 +305,7 @@ class PreviewGenerator:
                 '-dNOPAUSE',
                 '-dBATCH',
                 '-dSAFER',
+                '-dEPSCrop',  # CRITICAL: Crop to artwork bounds, not page size
                 '-sDEVICE=png16m',
                 '-r300',  # 300 DPI
                 '-dTextAlphaBits=4',  # Anti-aliasing for text
