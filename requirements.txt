@@ -8,3 +8,4 @@ svglib
 pypdf
 pdf2image
 anthropic
+anthropic
