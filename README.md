@@ -2,7 +2,7 @@
 
 **Save your art department 15+ hours per week**
 
-Automated artwork preview generation and AI-powered production consulting built specifically for promotional products suppliers.
+Automated artwork preview generation and AI-powered production guidance built specifically for promotional products suppliers.
 
 ## The Problem
 
@@ -38,15 +38,26 @@ Not a generic file converter - designed specifically for:
 
 🔗 Try it: [artcheck.streamlit.app](https://artcheck.streamlit.app)
 
+## Use Cases
+
+- **Sales reps** upload art without interrupting the design team
+- **Customers** see realistic previews instantly instead of waiting days
+- **Production teams** pre-screen problem files before they hit the queue
+- **CSRs** get AI-assisted responses to technical questions
+
 ## Roadmap
 
 - [x] Vector file preview generation
 - [x] Embroidery file support
-- [x] AI production consulting
+- [x] AI production guidance
 - [ ] Pantone color detection
 - [ ] Decoration method pre-screening
 - [ ] Batch processing
 - [ ] User accounts & file history
+
+## Why ArtCheck Exists
+
+After 20+ years in promotional products production, I was tired of watching talented artists burn out answering the same basic questions over and over. ArtCheck exists so creative teams can finally focus on real design work again.
 
 ## Built With
 
@@ -54,13 +65,11 @@ Python • Streamlit • Ghostscript • Claude AI • 20 years of promotional p
 
 ## Status
 
-Currently in private beta. Built by someone who's actually lived in production hell.
+Currently onboarding early partners.
 
 ## Interested?
 
-This is early-stage - reach out if you want to be part of shaping the product.
-
-For commercial licensing, API access, or inquiries, contact through GitHub.
+For commercial licensing, API access, or to become an early partner, contact through GitHub.
 
 ## License
 
