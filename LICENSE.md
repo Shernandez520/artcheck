@@ -20,7 +20,7 @@ You MAY NOT:
 ## Commercial Licensing
 
 For commercial use, API access, or licensing inquiries, contact:
-artcheck@sheila-domain.com (or your preferred contact)
+aqualeopromotions@gmail.com
 
 ## Disclaimer
 
