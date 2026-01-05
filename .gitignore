@@ -1,0 +1,28 @@
+# Secrets - NEVER commit these
+.streamlit/secrets.toml
+*.env
+.env
+secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+
+# Local development
+*.log
+.DS_Store
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# User data (if you add this later)
+uploads/
+user_data/
+Old versions/
