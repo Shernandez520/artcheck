@@ -591,8 +591,8 @@ with st.sidebar:
     st.caption("Your AI production assistant - 20+ years of industry knowledge")
     st.markdown("""
 <div style="background:#1a2535;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:0.82rem;color:#b0c4de;border-left:3px solid #667eea;">
-🤖 <strong style="color:#fff;">Hey, I'm ArtBot!</strong><br>
-I've spent 20+ years in art departments handling file issues, color questions, and decoration headaches. Ask me anything — I'll give you the exact words to use with your customer.
+🤖 <strong style="color:#fff;">Got a file issue? Ask me.</strong><br>
+I've got art department knowledge on demand — file fixes, color questions, decoration methods, and best practices. Tell me what's going on and I'll tell you exactly how to tackle it and what to say to your customer.
 </div>
 """, unsafe_allow_html=True)
 
