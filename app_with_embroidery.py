@@ -435,8 +435,11 @@ class PreviewGenerator:
         try:
             doc = self.fitz.open(input_file)
             page = doc[0]
-            # Render at 2x scale for quality
-            mat = self.fitz.Matrix(6, 6)  # 6x scale = ~432 DPI for crisp previews
+            # Calculate scale to ensure minimum 1200px on longest side
+            rect = page.rect
+            longest = max(rect.width, rect.height)
+            scale = max(10, 1200 / longest)  # At least 10x, enough to hit 1200px
+            mat = self.fitz.Matrix(scale, scale)
             pix = page.get_pixmap(matrix=mat, alpha=False)
             pix.save(output_file)
             doc.close()
