@@ -620,7 +620,23 @@ with st.sidebar:
         ]
         for ex in examples:
             if st.button(ex, use_container_width=True, key=f"ex_{ex}"):
-                st.session_state.artbot_input_value = ex
+                st.session_state.artbot_history.append({"role": "user", "content": ex})
+                try:
+                    import anthropic
+                    client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+                    full_response = ""
+                    with client.messages.stream(
+                        model="claude-sonnet-4-20250514",
+                        max_tokens=1000,
+                        system=ARTBOT_SYSTEM_PROMPT,
+                        messages=st.session_state.artbot_history.copy()
+                    ) as stream:
+                        for text in stream.text_stream:
+                            full_response += text
+                    st.session_state.artbot_history.append({"role": "assistant", "content": full_response})
+                except Exception as e:
+                    st.session_state.artbot_history.append({"role": "assistant", "content": f"⚠️ Error: {str(e)}"})
+                st.rerun()
 
     # Input + send button
     q_col, btn_col = st.columns([5, 1])
