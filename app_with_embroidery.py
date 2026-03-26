@@ -627,6 +627,7 @@ I've spent 20+ years in art departments handling file issues, color questions, a
         st.session_state.artbot_pending = None
         st.session_state.artbot_input_value = ""
         _run_artbot(q)
+        st.rerun()
 
     # Scrollable chat history box
     chat_html = ""
