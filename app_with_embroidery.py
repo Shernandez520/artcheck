@@ -600,6 +600,8 @@ I've spent 20+ years in art departments handling file issues, color questions, a
         st.session_state.artbot_history = []
     if "artbot_input_value" not in st.session_state:
         st.session_state.artbot_input_value = ""
+    if "artbot_input_key" not in st.session_state:
+        st.session_state.artbot_input_key = 0
     if "artbot_pending" not in st.session_state:
         st.session_state.artbot_pending = None
 
@@ -657,23 +659,23 @@ I've spent 20+ years in art departments handling file issues, color questions, a
                 st.session_state.artbot_pending = ex
                 st.rerun()
 
-    # Input + send button
+    # Input + send button — key rotates on submit to force clear
     q_col, btn_col = st.columns([5, 1])
     with q_col:
-        question_input = st.text_input("q", value=st.session_state.artbot_input_value,
-            placeholder="Ask anything...", key="artbot_input", label_visibility="collapsed")
+        question_input = st.text_input("q", placeholder="Ask anything...",
+            key=f"artbot_input_{st.session_state.artbot_input_key}", label_visibility="collapsed")
     with btn_col:
         send = st.button("➤", use_container_width=True, type="primary")
 
     if st.session_state.artbot_history:
         if st.button("🔄 Clear conversation", use_container_width=True):
             st.session_state.artbot_history = []
-            st.session_state.artbot_input_value = ""
+            st.session_state.artbot_input_key += 1
             st.rerun()
 
     if send and question_input.strip():
         st.session_state.artbot_pending = question_input.strip()
-        st.session_state.artbot_input_value = ""
+        st.session_state.artbot_input_key += 1
         st.rerun()
 
 # ============================================================================
