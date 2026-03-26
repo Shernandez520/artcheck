@@ -589,50 +589,67 @@ st.markdown('<p class="tagline">Vector & Embroidery File Preview Generator + AI 
 with st.sidebar:
     st.markdown("### 🤖 Ask ArtBot")
     st.caption("Your AI production assistant - 20+ years of industry knowledge")
-    
-    # Question input
-    question = st.text_area(
-        "Ask about file requirements, decoration methods, or art issues",
-        placeholder="e.g., What file format for embroidery?",
-        height=100,
-        key="artbot_question"
-    )
-    
-    # Ask button
-    if st.button("🚀 Ask ArtBot", use_container_width=True, type="primary"):
-        if question.strip():
-            with st.spinner("🤖 ArtBot is thinking..."):
-                # Initialize conversation history in session state if needed
-                if 'artbot_history' not in st.session_state:
-                    st.session_state.artbot_history = []
-                
-                # Get answer
-                answer = ask_artbot(question, st.session_state.artbot_history)
-                
-                # Store in history
-                st.session_state.artbot_history.append({
-                    "role": "user",
-                    "content": question
-                })
-                st.session_state.artbot_history.append({
-                    "role": "assistant", 
-                    "content": answer
-                })
-                
-                # Display answer
-                st.markdown('<div class="artbot-answer">', unsafe_allow_html=True)
-                st.markdown(f'<div class="artbot-header">🤖 ArtBot:</div>', unsafe_allow_html=True)
-                st.markdown(answer)
-                st.markdown('</div>', unsafe_allow_html=True)
+
+    # Initialize conversation history
+    if 'artbot_history' not in st.session_state:
+        st.session_state.artbot_history = []
+
+    # Render full conversation history
+    for msg in st.session_state.artbot_history:
+        if msg['role'] == 'user':
+            with st.chat_message("user"):
+                st.markdown(msg['content'])
         else:
-            st.warning("Please enter a question")
-    
+            with st.chat_message("assistant", avatar="🤖"):
+                st.markdown(msg['content'])
+
+    # Chat input (stays at bottom of sidebar)
+    question = st.chat_input("Ask about files, colors, decoration methods...")
+
+    if question:
+        # Show user message immediately
+        with st.chat_message("user"):
+            st.markdown(question)
+
+        # Add to history
+        st.session_state.artbot_history.append({"role": "user", "content": question})
+
+        # Stream ArtBot response
+        with st.chat_message("assistant", avatar="🤖"):
+            try:
+                import anthropic
+                client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+
+                # Build messages without the latest user msg (already appended above)
+                messages = st.session_state.artbot_history.copy()
+
+                full_response = ""
+                placeholder = st.empty()
+
+                with client.messages.stream(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=1000,
+                    system=ARTBOT_SYSTEM_PROMPT,
+                    messages=messages
+                ) as stream:
+                    for text in stream.text_stream:
+                        full_response += text
+                        placeholder.markdown(full_response + "▌")
+
+                placeholder.markdown(full_response)
+                st.session_state.artbot_history.append({"role": "assistant", "content": full_response})
+
+            except Exception as e:
+                err = f"⚠️ ArtBot error: {str(e)}"
+                st.markdown(err)
+                st.session_state.artbot_history.append({"role": "assistant", "content": err})
+
     # Clear conversation
-    if 'artbot_history' in st.session_state and len(st.session_state.artbot_history) > 0:
+    if st.session_state.artbot_history:
         if st.button("🔄 Clear Conversation", use_container_width=True):
             st.session_state.artbot_history = []
             st.rerun()
-    
+
     # Example questions
     with st.expander("💡 Example Questions"):
         examples = [
@@ -647,9 +664,8 @@ with st.sidebar:
         ]
         for ex in examples:
             st.markdown(f"• {ex}")
-    
+
     st.divider()
-    
     st.markdown("**💡 Save your art team 15+ hours/week**")
     st.caption("Instant previews + AI answers = fewer interruptions")
 
