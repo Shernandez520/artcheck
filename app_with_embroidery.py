@@ -583,14 +583,12 @@ st.markdown('<h1 class="main-header">🎨 ArtCheck</h1>', unsafe_allow_html=True
 st.markdown('<p class="tagline">Vector & Embroidery File Preview Generator + AI Production Assistant</p>', unsafe_allow_html=True)
 
 # ============================================================================
-# MAIN LAYOUT - Two columns: Upload left, ArtBot right
+# SIDEBAR - ASK ARTBOT
 # ============================================================================
 
-col_upload, col_artbot = st.columns([3, 2])
-
-with col_artbot:
+with st.sidebar:
     st.markdown("### 🤖 Ask ArtBot")
-    st.caption("Your AI production assistant - 20+ years of industry knowledge")
+    st.caption("20+ years of industry knowledge")
 
     if 'artbot_history' not in st.session_state:
         st.session_state.artbot_history = []
@@ -599,20 +597,19 @@ with col_artbot:
     chat_html = ""
     for msg in st.session_state.artbot_history:
         if msg["role"] == "user":
-            chat_html += f'<div style="margin:6px 0;padding:8px 12px;background:#2b2d42;border-radius:12px 12px 4px 12px;color:#fff;font-size:0.88rem;text-align:right;">{msg["content"]}</div>'
+            chat_html += f'''<div style="margin:4px 0;padding:6px 10px;background:#2b2d42;border-radius:10px 10px 3px 10px;color:#fff;font-size:0.85rem;text-align:right;">{msg["content"]}</div>'''
         else:
-            chat_html += f'<div style="margin:6px 0;padding:8px 12px;background:#1e3a5f;border-radius:12px 12px 12px 4px;color:#e0e0e0;font-size:0.88rem;">🤖 {msg["content"]}</div>'
-
+            chat_html += f'''<div style="margin:4px 0;padding:6px 10px;background:#1e3a5f;border-radius:10px 10px 10px 3px;color:#e0e0e0;font-size:0.85rem;">🤖 {msg["content"]}</div>'''
     st.markdown(
-        f'<div style="height:400px;overflow-y:auto;padding:8px;border:1px solid #333;border-radius:8px;background:#111;margin-bottom:10px;">{chat_html}</div>',
+        f'''<div style="height:420px;overflow-y:auto;padding:6px;border:1px solid #333;border-radius:8px;background:#111;margin-bottom:8px;">{chat_html}</div>''',
         unsafe_allow_html=True
     )
 
-    # Input always visible below the box
-    col_in, col_btn = st.columns([4, 1])
-    with col_in:
-        question_input = st.text_input("msg", placeholder="Ask ArtBot anything...", key="artbot_input", label_visibility="collapsed")
-    with col_btn:
+    # Input pinned below history
+    q_col, btn_col = st.columns([5, 1])
+    with q_col:
+        question_input = st.text_input("q", placeholder="Ask anything...", key="artbot_input", label_visibility="collapsed")
+    with btn_col:
         send = st.button("➤", use_container_width=True, type="primary")
 
     if st.session_state.artbot_history:
@@ -620,34 +617,27 @@ with col_artbot:
             st.session_state.artbot_history = []
             st.rerun()
 
-    with st.expander("💡 Example Questions"):
-        for ex in ["What file format for screen printing?", "How many colors for embroidery?",
-                   "What DPI for a 2 inch logo?", "Can I use gradients on shirts?",
-                   "Difference between vector and raster?", "What's a stitch count?"]:
-            st.markdown(f"• {ex}")
-
     question = question_input.strip() if send and question_input.strip() else None
 
     if question:
         st.session_state.artbot_history.append({"role": "user", "content": question})
-        with st.spinner("🤖 ArtBot is thinking..."):
+        with st.spinner("thinking..."):
             try:
                 import anthropic
                 client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
-                messages = st.session_state.artbot_history.copy()
                 full_response = ""
                 with client.messages.stream(
                     model="claude-sonnet-4-20250514",
                     max_tokens=1000,
                     system=ARTBOT_SYSTEM_PROMPT,
-                    messages=messages
+                    messages=st.session_state.artbot_history.copy()
                 ) as stream:
                     for text in stream.text_stream:
                         full_response += text
                 st.session_state.artbot_history.append({"role": "assistant", "content": full_response})
                 st.rerun()
             except Exception as e:
-                err = f"⚠️ ArtBot error: {str(e)}"
+                err = f"⚠️ Error: {str(e)}"
                 st.session_state.artbot_history.append({"role": "assistant", "content": err})
                 st.rerun()
 
@@ -655,119 +645,119 @@ with col_artbot:
 # FILE UPLOAD SECTION
 # ============================================================================
 
-with col_upload:
 
 
-    st.markdown("## 📁 Upload Your File")
 
-    vector_formats = ".ai, .eps, .pdf, .svg, .cdr, .xcf"
-    embroidery_formats = ".dst, .pes, .exp, .jef, .vp3, .xxx, .u01"
+st.markdown("## 📁 Upload Your File")
 
-    st.info(f"**Supported:** Vector files ({vector_formats}) | Embroidery files ({embroidery_formats})")
+vector_formats = ".ai, .eps, .pdf, .svg, .cdr, .xcf"
+embroidery_formats = ".dst, .pes, .exp, .jef, .vp3, .xxx, .u01"
 
-    uploaded_file = st.file_uploader(
-        "🎨 Drag and drop your file here or click to browse",
-        type=['ai', 'eps', 'pdf', 'svg', 'cdr', 'xcf', 'indd', 'dst', 'pes', 'exp', 'jef', 'vp3', 'xxx', 'u01'],
-        help="Supports vector and embroidery files up to 200MB"
-    )
+st.info(f"**Supported:** Vector files ({vector_formats}) | Embroidery files ({embroidery_formats})")
 
-    if uploaded_file:
-        # Check for InDesign files
-        if uploaded_file.name.lower().endswith('.indd'):
-            st.error("### 📄 InDesign Files Not Supported")
-            st.warning("""
-            **InDesign (.indd) files cannot be processed directly.**
-        
-            **Please export from InDesign as:**
-            - **PDF** (File → Export → Adobe PDF) - BEST for print
-            - **AI** (File → Export → Adobe Illustrator)
-            - **EPS** (File → Export → EPS)
-        
-            Then upload the exported file to ArtCheck!
-            """)
-            st.stop()
+uploaded_file = st.file_uploader(
+    "🎨 Drag and drop your file here or click to browse",
+    type=['ai', 'eps', 'pdf', 'svg', 'cdr', 'xcf', 'indd', 'dst', 'pes', 'exp', 'jef', 'vp3', 'xxx', 'u01'],
+    help="Supports vector and embroidery files up to 200MB"
+)
+
+if uploaded_file:
+    # Check for InDesign files
+    if uploaded_file.name.lower().endswith('.indd'):
+        st.error("### 📄 InDesign Files Not Supported")
+        st.warning("""
+        **InDesign (.indd) files cannot be processed directly.**
     
-        st.success(f"✓ Uploaded: **{uploaded_file.name}** ({uploaded_file.size / 1024 / 1024:.2f} MB)")
+        **Please export from InDesign as:**
+        - **PDF** (File → Export → Adobe PDF) - BEST for print
+        - **AI** (File → Export → Adobe Illustrator)
+        - **EPS** (File → Export → EPS)
     
-        # Background options — use session state so selection survives the Generate button click
-        if 'bg_type' not in st.session_state:
+        Then upload the exported file to ArtCheck!
+        """)
+        st.stop()
+
+    st.success(f"✓ Uploaded: **{uploaded_file.name}** ({uploaded_file.size / 1024 / 1024:.2f} MB)")
+
+    # Background options — use session state so selection survives the Generate button click
+    if 'bg_type' not in st.session_state:
+        st.session_state.bg_type = 'auto'
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        if st.button("🔄 Auto", use_container_width=True):
             st.session_state.bg_type = 'auto'
+    with col2:
+        if st.button("☀️ Light", use_container_width=True):
+            st.session_state.bg_type = 'light'
+    with col3:
+        if st.button("🌙 Dark", use_container_width=True):
+            st.session_state.bg_type = 'dark'
+    with col4:
+        if st.button("⬜ Transparent", use_container_width=True):
+            st.session_state.bg_type = 'transparent'
 
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            if st.button("🔄 Auto", use_container_width=True):
-                st.session_state.bg_type = 'auto'
-        with col2:
-            if st.button("☀️ Light", use_container_width=True):
-                st.session_state.bg_type = 'light'
-        with col3:
-            if st.button("🌙 Dark", use_container_width=True):
-                st.session_state.bg_type = 'dark'
-        with col4:
-            if st.button("⬜ Transparent", use_container_width=True):
-                st.session_state.bg_type = 'transparent'
+    bg_type = st.session_state.bg_type
+    st.caption(f"Background: **{bg_type.title()}**")
 
-        bg_type = st.session_state.bg_type
-        st.caption(f"Background: **{bg_type.title()}**")
-    
-        # Generate Preview
-        if st.button("🚀 Generate Preview", use_container_width=True, type="primary"):
-            with st.spinner("Generating preview..."):
-                # Save uploaded file to temp location
-                with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp_file:
-                    tmp_file.write(uploaded_file.getvalue())
-                    tmp_path = tmp_file.name
+    # Generate Preview
+    if st.button("🚀 Generate Preview", use_container_width=True, type="primary"):
+        with st.spinner("Generating preview..."):
+            # Save uploaded file to temp location
+            with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp_file:
+                tmp_file.write(uploaded_file.getvalue())
+                tmp_path = tmp_file.name
+        
+            generator = PreviewGenerator()
+            result = generator.generate_preview(tmp_path, bg_type)
+        
+            # Cleanup temp input
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        
+            if result:
+                st.markdown('<div class="success-box">✅ Preview generated successfully!</div>', 
+                          unsafe_allow_html=True)
             
-                generator = PreviewGenerator()
-                result = generator.generate_preview(tmp_path, bg_type)
+                # Display preview and info
+                col1, col2 = st.columns([2, 1])
             
-                # Cleanup temp input
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
+                with col1:
+                    st.image(result['image'], caption="Your Preview", use_container_width=True)
             
-                if result:
-                    st.markdown('<div class="success-box">✅ Preview generated successfully!</div>', 
-                              unsafe_allow_html=True)
+                with col2:
+                    st.markdown("### Preview Info")
+                    w_in = round(result["width"] / 300, 2)
+                    h_in = round(result["height"] / 300, 2)
+                    st.metric("Dimensions (px)", f"{result["width"]} × {result["height"]}")
+                    st.metric("Size @ 300dpi", f"{w_in}in × {h_in}in")
+                    st.metric("File Size", f"{result['size_kb']} KB")
+                    st.metric("File Type", result['file_type'].title())
                 
-                    # Display preview and info
-                    col1, col2 = st.columns([2, 1])
+                    if 'embroidery_info' in result:
+                        emb = result['embroidery_info']
+                        st.markdown("### 🧵 Embroidery Info")
+                        st.metric("Stitch Count", f"{emb['stitch_count']:,}")
+                        st.metric("Thread Changes", emb['thread_changes'])
+                        st.metric("Size", f"{emb['width_mm']}mm × {emb['height_mm']}mm")
                 
-                    with col1:
-                        st.image(result['image'], caption="Your Preview", use_container_width=True)
+                    st.markdown("---")
                 
-                    with col2:
-                        st.markdown("### Preview Info")
-                        w_in = round(result["width"] / 300, 2)
-                        h_in = round(result["height"] / 300, 2)
-                        st.metric("Dimensions (px)", f"{result["width"]} × {result["height"]}")
-                        st.metric("Size @ 300dpi", f"{w_in}in × {h_in}in")
-                        st.metric("File Size", f"{result['size_kb']} KB")
-                        st.metric("File Type", result['file_type'].title())
-                    
-                        if 'embroidery_info' in result:
-                            emb = result['embroidery_info']
-                            st.markdown("### 🧵 Embroidery Info")
-                            st.metric("Stitch Count", f"{emb['stitch_count']:,}")
-                            st.metric("Thread Changes", emb['thread_changes'])
-                            st.metric("Size", f"{emb['width_mm']}mm × {emb['height_mm']}mm")
-                    
-                        st.markdown("---")
-                    
-                        # Download preview
-                        with open(result['image'], 'rb') as f:
-                            st.download_button(
-                                label="⬇️ Download Preview (PNG)",
-                                data=f,
-                                file_name=f"{Path(uploaded_file.name).stem}_preview.png",
-                                mime="image/png",
-                                use_container_width=True
-                            )
+                    # Download preview
+                    with open(result['image'], 'rb') as f:
+                        st.download_button(
+                            label="⬇️ Download Preview (PNG)",
+                            data=f,
+                            file_name=f"{Path(uploaded_file.name).stem}_preview.png",
+                            mime="image/png",
+                            use_container_width=True
+                        )
 
-    # Footer
-    st.markdown("---")
-    st.markdown("""
-    <div style='text-align: center; color: #666;'>
-        <p>Built with ❤️ for promotional products professionals</p>
-        <p>🤖 AI-powered answers • 📁 Instant previews • ⏱️ Save 15+ hours/week</p>
-    </div>
-    """, unsafe_allow_html=True)
+# Footer
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: #666;'>
+    <p>Built with ❤️ for promotional products professionals</p>
+    <p>🤖 AI-powered answers • 📁 Instant previews • ⏱️ Save 15+ hours/week</p>
+</div>
+""", unsafe_allow_html=True)
