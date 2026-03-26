@@ -589,11 +589,44 @@ st.markdown('<p class="tagline">Vector & Embroidery File Preview Generator + AI 
 with st.sidebar:
     st.markdown("### 🤖 Ask ArtBot")
     st.caption("Your AI production assistant - 20+ years of industry knowledge")
+    st.markdown("""
+<div style="background:#1a2535;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:0.82rem;color:#b0c4de;border-left:3px solid #667eea;">
+🤖 <strong style="color:#fff;">Hey, I'm ArtBot!</strong><br>
+I've spent 20+ years in art departments handling file issues, color questions, and decoration headaches. Ask me anything — I'll give you the exact words to use with your customer.
+</div>
+""", unsafe_allow_html=True)
 
     if "artbot_history" not in st.session_state:
         st.session_state.artbot_history = []
     if "artbot_input_value" not in st.session_state:
         st.session_state.artbot_input_value = ""
+    if "artbot_pending" not in st.session_state:
+        st.session_state.artbot_pending = None
+
+    # Handle pending question (from example buttons or send)
+    def _run_artbot(question):
+        st.session_state.artbot_history.append({"role": "user", "content": question})
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+            full_response = ""
+            with client.messages.stream(
+                model="claude-sonnet-4-20250514",
+                max_tokens=1000,
+                system=ARTBOT_SYSTEM_PROMPT,
+                messages=st.session_state.artbot_history.copy()
+            ) as stream:
+                for text in stream.text_stream:
+                    full_response += text
+            st.session_state.artbot_history.append({"role": "assistant", "content": full_response})
+        except Exception as e:
+            st.session_state.artbot_history.append({"role": "assistant", "content": f"⚠️ Error: {str(e)}"})
+
+    if st.session_state.artbot_pending:
+        q = st.session_state.artbot_pending
+        st.session_state.artbot_pending = None
+        st.session_state.artbot_input_value = ""
+        _run_artbot(q)
 
     # Scrollable chat history box
     chat_html = ""
@@ -620,22 +653,7 @@ with st.sidebar:
         ]
         for ex in examples:
             if st.button(ex, use_container_width=True, key=f"ex_{ex}"):
-                st.session_state.artbot_history.append({"role": "user", "content": ex})
-                try:
-                    import anthropic
-                    client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
-                    full_response = ""
-                    with client.messages.stream(
-                        model="claude-sonnet-4-20250514",
-                        max_tokens=1000,
-                        system=ARTBOT_SYSTEM_PROMPT,
-                        messages=st.session_state.artbot_history.copy()
-                    ) as stream:
-                        for text in stream.text_stream:
-                            full_response += text
-                    st.session_state.artbot_history.append({"role": "assistant", "content": full_response})
-                except Exception as e:
-                    st.session_state.artbot_history.append({"role": "assistant", "content": f"⚠️ Error: {str(e)}"})
+                st.session_state.artbot_pending = ex
                 st.rerun()
 
     # Input + send button
@@ -652,30 +670,10 @@ with st.sidebar:
             st.session_state.artbot_input_value = ""
             st.rerun()
 
-    question = question_input.strip() if send and question_input.strip() else None
-
-    if question:
-        st.session_state.artbot_input_value = ""  # Clear input on next rerun
-        st.session_state.artbot_history.append({"role": "user", "content": question})
-        with st.spinner("🤖 thinking..."):
-            try:
-                import anthropic
-                client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
-                full_response = ""
-                with client.messages.stream(
-                    model="claude-sonnet-4-20250514",
-                    max_tokens=1000,
-                    system=ARTBOT_SYSTEM_PROMPT,
-                    messages=st.session_state.artbot_history.copy()
-                ) as stream:
-                    for text in stream.text_stream:
-                        full_response += text
-                st.session_state.artbot_history.append({"role": "assistant", "content": full_response})
-                st.rerun()
-            except Exception as e:
-                err = f"⚠️ Error: {str(e)}"
-                st.session_state.artbot_history.append({"role": "assistant", "content": err})
-                st.rerun()
+    if send and question_input.strip():
+        st.session_state.artbot_pending = question_input.strip()
+        st.session_state.artbot_input_value = ""
+        st.rerun()
 
 # ============================================================================
 # FILE UPLOAD SECTION
