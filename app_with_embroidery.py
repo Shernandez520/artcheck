@@ -651,7 +651,7 @@ with st.sidebar:
         else:
             chat_html += f'''<div style="margin:4px 0;padding:6px 10px;background:#1e3a5f;border-radius:10px 10px 10px 3px;color:#e0e0e0;font-size:0.95rem;">🤖 {msg["content"]}</div>'''
     st.markdown(
-        f'''<div style="height:380px;overflow-y:auto;padding:6px;border:1px solid #333;border-radius:8px;background:#111;margin-bottom:8px;">{chat_html}</div>''',
+        f'''<div style="height:500px;overflow-y:auto;padding:6px;border:1px solid #333;border-radius:8px;background:#111;margin-bottom:8px;">{chat_html}</div>''',
         unsafe_allow_html=True
     )
 
@@ -663,19 +663,24 @@ with st.sidebar:
             "How many colors for embroidery?",
             "What DPI for a 2 inch logo?",
             "Difference between vector and raster?",
+            "Can I use gradients on shirts?",
+            "Why did my file get rejected?",
+            "What's a stitch count?",
+            "How do I handle a customer pushing back on art fees?",
         ]
         for ex in examples:
             if st.button(ex, use_container_width=True, key=f"ex_{ex}"):
                 st.session_state.artbot_pending = ex
                 st.rerun()
 
-    # Input + send button — key rotates on submit to force clear
-    q_col, btn_col = st.columns([5, 1])
-    with q_col:
-        question_input = st.text_input("q", placeholder="Ask anything...",
-            key=f"artbot_input_{st.session_state.artbot_input_key}", label_visibility="collapsed")
-    with btn_col:
-        send = st.button("➤", use_container_width=True, type="primary")
+    # Input + send button — form allows Enter key to submit
+    with st.form(key=f"artbot_form_{st.session_state.artbot_input_key}", clear_on_submit=True):
+        q_col, btn_col = st.columns([5, 1])
+        with q_col:
+            question_input = st.text_input("q", placeholder="Ask anything...",
+                label_visibility="collapsed")
+        with btn_col:
+            send = st.form_submit_button("➤", use_container_width=True, type="primary")
 
     if st.session_state.artbot_history:
         if st.button("🔄 Clear conversation", use_container_width=True):
