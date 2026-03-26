@@ -428,6 +428,34 @@ class PreviewGenerator:
             st.warning(f"CairoSVG conversion failed: {str(e)}")
             return False
 
+    def _convert_eps_with_ghostscript(self, input_file, output_file):
+        """Convert EPS to PNG using Ghostscript"""
+        try:
+            cmd = [
+                'gs', '-dNOPAUSE', '-dBATCH', '-dSAFER',
+                '-sDEVICE=png16m',
+                '-r300',
+                '-dEPSCrop',
+                f'-sOutputFile={output_file}',
+                input_file
+            ]
+            result = subprocess.run(cmd, capture_output=True, timeout=30)
+            if result.returncode == 0 and os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+                return True
+            # Try without EPSCrop if that failed
+            cmd2 = [
+                'gs', '-dNOPAUSE', '-dBATCH', '-dSAFER',
+                '-sDEVICE=png16m',
+                '-r300',
+                f'-sOutputFile={output_file}',
+                input_file
+            ]
+            result2 = subprocess.run(cmd2, capture_output=True, timeout=30)
+            return result2.returncode == 0 and os.path.exists(output_file) and os.path.getsize(output_file) > 0
+        except Exception as e:
+            st.warning(f"Ghostscript EPS conversion failed: {str(e)}")
+            return False
+
     def _convert_with_fitz(self, input_file, output_file):
         """Convert PDF or SVG to PNG using PyMuPDF (fitz) - handles AI-native PDFs"""
         if not self.has_fitz:
@@ -513,8 +541,14 @@ class PreviewGenerator:
         success = False
         file_type_label = self._detect_file_type_label(input_file, ext)
 
-        if ext == '.pdf' or ext == '.ai' or ext == '.eps':
-            # For PDFs (including AI-native): use fitz first, pdf2image as fallback
+        if ext == '.eps':
+            # EPS: Ghostscript first, then fitz as fallback
+            success = self._convert_eps_with_ghostscript(input_file, output_file)
+            if not success:
+                success = self._convert_with_fitz(input_file, output_file)
+
+        elif ext == '.pdf' or ext == '.ai':
+            # PDF/AI: fitz first, pdf2image as fallback
             success = self._convert_with_fitz(input_file, output_file)
             if not success and self.has_pdf2image:
                 try:
