@@ -68,6 +68,15 @@ st.markdown("""
         font-size: 1.1rem;
         margin-bottom: 0.5rem;
     }
+    section[data-testid="stSidebar"] * {
+        font-size: 0.95rem !important;
+    }
+    section[data-testid="stSidebar"] .stButton button {
+        font-size: 0.95rem !important;
+    }
+    section[data-testid="stSidebar"] .stTextInput input {
+        font-size: 0.95rem !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -590,7 +599,7 @@ with st.sidebar:
     st.markdown("### 🤖 Ask ArtBot")
     st.caption("Your AI production assistant - 20+ years of industry knowledge")
     st.markdown("""
-<div style="background:#1a2535;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:0.82rem;color:#b0c4de;border-left:3px solid #667eea;">
+<div style="background:#1a2535;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:0.95rem;color:#b0c4de;border-left:3px solid #667eea;">
 🤖 <strong style="color:#fff;">Got a file issue? Ask me.</strong><br>
 I've got art department knowledge on demand — file fixes, color questions, decoration methods, and best practices. Tell me what's going on and I'll tell you exactly how to tackle it and what to say to your customer.
 </div>
@@ -637,9 +646,9 @@ I've got art department knowledge on demand — file fixes, color questions, dec
         chat_html = '<div style="color:#666;font-size:0.85rem;text-align:center;padding-top:30px;">Ask me anything about files,<br>colors, or decoration methods!</div>'
     for msg in st.session_state.artbot_history:
         if msg["role"] == "user":
-            chat_html += f'''<div style="margin:4px 0;padding:6px 10px;background:#2b2d42;border-radius:10px 10px 3px 10px;color:#fff;font-size:0.85rem;text-align:right;">{msg["content"]}</div>'''
+            chat_html += f'''<div style="margin:4px 0;padding:6px 10px;background:#2b2d42;border-radius:10px 10px 3px 10px;color:#fff;font-size:0.95rem;text-align:right;">{msg["content"]}</div>'''
         else:
-            chat_html += f'''<div style="margin:4px 0;padding:6px 10px;background:#1e3a5f;border-radius:10px 10px 10px 3px;color:#e0e0e0;font-size:0.85rem;">🤖 {msg["content"]}</div>'''
+            chat_html += f'''<div style="margin:4px 0;padding:6px 10px;background:#1e3a5f;border-radius:10px 10px 10px 3px;color:#e0e0e0;font-size:0.95rem;">🤖 {msg["content"]}</div>'''
     st.markdown(
         f'''<div style="height:380px;overflow-y:auto;padding:6px;border:1px solid #333;border-radius:8px;background:#111;margin-bottom:8px;">{chat_html}</div>''',
         unsafe_allow_html=True
