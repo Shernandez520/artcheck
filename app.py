@@ -370,12 +370,35 @@ class PreviewGenerator:
         except ImportError:
             self.pdf2image_convert = None
             self.has_pdf2image = False
+
+        try:
+            import fitz  # PyMuPDF
+            self.fitz = fitz
+            self.has_fitz = True
+        except ImportError:
+            self.fitz = None
+            self.has_fitz = False
     
     def is_supported(self, filename):
         """Check if file format is supported"""
         ext = Path(filename).suffix.lower()
         return ext in self.SUPPORTED_FORMATS or self.embroidery.is_embroidery_file(filename)
     
+    def _svg_has_embedded_raster(self, input_file):
+        """Detect if SVG is just a wrapper around an embedded raster image"""
+        try:
+            with open(input_file, 'r', errors='ignore') as f:
+                content = f.read(4000)  # Check first 4KB
+            # SVGs with embedded rasters typically have base64 image data or xlink:href to raster
+            import re
+            has_image_tag = bool(re.search(r'<image', content, re.IGNORECASE))
+            has_base64 = 'base64' in content
+            # Check if there are almost no path/shape elements (pure raster wrapper)
+            has_paths = bool(re.search(r'<(path|rect|circle|ellipse|line|polyline|polygon)', content, re.IGNORECASE))
+            return has_image_tag and (has_base64 or not has_paths)
+        except Exception:
+            return False
+
     def _convert_svg_with_cairosvg(self, input_file, output_file):
         """Convert SVG to PNG using CairoSVG"""
         if not self.has_cairosvg:
@@ -395,7 +418,61 @@ class PreviewGenerator:
         except Exception as e:
             st.warning(f"CairoSVG conversion failed: {str(e)}")
             return False
-    
+
+    def _convert_with_fitz(self, input_file, output_file):
+        """Convert PDF or SVG to PNG using PyMuPDF (fitz) - handles AI-native PDFs"""
+        if not self.has_fitz:
+            return False
+        try:
+            doc = self.fitz.open(input_file)
+            page = doc[0]
+            # Render at 2x scale for quality
+            mat = self.fitz.Matrix(2, 2)
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+            pix.save(output_file)
+            doc.close()
+            return os.path.exists(output_file) and os.path.getsize(output_file) > 0
+        except Exception as e:
+            st.warning(f"PyMuPDF conversion failed: {str(e)}")
+            return False
+
+    def _apply_background(self, output_file, bg_type):
+        """Apply background color to a PNG preview"""
+        try:
+            img = Image.open(output_file).convert('RGBA')
+
+            if bg_type == 'transparent':
+                # Keep as-is, just save as RGBA PNG
+                img.save(output_file, 'PNG')
+                return
+
+            # Determine background color
+            if bg_type == 'dark':
+                bg_color = (30, 30, 30, 255)
+            elif bg_type == 'light':
+                bg_color = (255, 255, 255, 255)
+            elif bg_type == 'auto':
+                # Check if artwork is mostly light — if so, use dark bg
+                grayscale = img.convert('L')
+                avg = sum(grayscale.getdata()) / len(grayscale.getdata())
+                bg_color = (30, 30, 30, 255) if avg > 200 else (255, 255, 255, 255)
+            else:
+                bg_color = (255, 255, 255, 255)
+
+            background = Image.new('RGBA', img.size, bg_color)
+            background.paste(img, mask=img.split()[3])  # Use alpha channel as mask
+            background.convert('RGB').save(output_file, 'PNG')
+        except Exception as e:
+            st.warning(f"Background application failed: {str(e)}")
+
+    def _detect_file_type_label(self, input_file, ext):
+        """Return accurate file type label"""
+        if ext == '.svg' and self._svg_has_embedded_raster(input_file):
+            return 'SVG (embedded raster)'
+        elif ext in ['.pdf', '.ai', '.eps']:
+            return 'Vector (PDF)'
+        return 'Vector'
+
     def generate_preview(self, input_file, bg_type='auto'):
         """Generate preview from vector or embroidery file"""
         ext = Path(input_file).suffix.lower()
@@ -406,6 +483,7 @@ class PreviewGenerator:
             success, result = self.embroidery.convert_to_png(input_file, output_file)
             
             if success:
+                self._apply_background(output_file, bg_type)
                 img = Image.open(output_file)
                 return {
                     'image': output_file,
@@ -419,24 +497,44 @@ class PreviewGenerator:
                 st.error(f"Embroidery conversion failed: {result}")
                 return None
         
-        # Handle vector files (simplified version - full code would be longer)
         output_file = tempfile.mktemp(suffix='.png')
-        
-        # Try conversion methods based on file type
         success = False
-        if ext == '.svg':
-            success = self._convert_svg_with_cairosvg(input_file, output_file)
-        
+        file_type_label = self._detect_file_type_label(input_file, ext)
+
+        if ext == '.pdf' or ext == '.ai' or ext == '.eps':
+            # For PDFs (including AI-native): use fitz first, pdf2image as fallback
+            success = self._convert_with_fitz(input_file, output_file)
+            if not success and self.has_pdf2image:
+                try:
+                    pages = self.pdf2image_convert(input_file, first_page=1, last_page=1, dpi=150)
+                    if pages:
+                        pages[0].save(output_file, 'PNG')
+                        success = os.path.exists(output_file) and os.path.getsize(output_file) > 0
+                except Exception as e:
+                    st.warning(f"pdf2image fallback failed: {str(e)}")
+
+        elif ext == '.svg':
+            embedded_raster = self._svg_has_embedded_raster(input_file)
+            if embedded_raster:
+                # Try fitz first for raster-in-SVG, then CairoSVG
+                success = self._convert_with_fitz(input_file, output_file)
+            if not success:
+                success = self._convert_svg_with_cairosvg(input_file, output_file)
+            if not success and self.has_fitz:
+                success = self._convert_with_fitz(input_file, output_file)
+
         if success and os.path.exists(output_file):
+            self._apply_background(output_file, bg_type)
             img = Image.open(output_file)
             return {
                 'image': output_file,
                 'width': img.width,
                 'height': img.height,
                 'size_kb': round(os.path.getsize(output_file) / 1024, 2),
-                'file_type': 'vector'
+                'file_type': file_type_label
             }
-        
+
+        st.error("Could not convert file. Please try exporting as PDF or SVG from your design application.")
         return None
 
 
@@ -590,25 +688,26 @@ if uploaded_file:
     
     st.success(f"✓ Uploaded: **{uploaded_file.name}** ({uploaded_file.size / 1024 / 1024:.2f} MB)")
     
-    # Background options
+    # Background options — use session state so selection survives the Generate button click
+    if 'bg_type' not in st.session_state:
+        st.session_state.bg_type = 'auto'
+
     col1, col2, col3, col4 = st.columns(4)
-    
     with col1:
-        bg_auto = st.button("🔄 Auto", use_container_width=True)
+        if st.button("🔄 Auto", use_container_width=True):
+            st.session_state.bg_type = 'auto'
     with col2:
-        bg_light = st.button("☀️ Light", use_container_width=True)
+        if st.button("☀️ Light", use_container_width=True):
+            st.session_state.bg_type = 'light'
     with col3:
-        bg_dark = st.button("🌙 Dark", use_container_width=True)
+        if st.button("🌙 Dark", use_container_width=True):
+            st.session_state.bg_type = 'dark'
     with col4:
-        bg_transparent = st.button("⬜ Transparent", use_container_width=True)
-    
-    bg_type = 'auto'
-    if bg_light:
-        bg_type = 'light'
-    elif bg_dark:
-        bg_type = 'dark'
-    elif bg_transparent:
-        bg_type = 'transparent'
+        if st.button("⬜ Transparent", use_container_width=True):
+            st.session_state.bg_type = 'transparent'
+
+    bg_type = st.session_state.bg_type
+    st.caption(f"Background: **{bg_type.title()}**")
     
     # Generate Preview
     if st.button("🚀 Generate Preview", use_container_width=True, type="primary"):
