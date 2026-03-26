@@ -436,7 +436,7 @@ class PreviewGenerator:
             doc = self.fitz.open(input_file)
             page = doc[0]
             # Render at 2x scale for quality
-            mat = self.fitz.Matrix(2, 2)
+            mat = self.fitz.Matrix(6, 6)  # 6x scale = ~432 DPI for crisp previews
             pix = page.get_pixmap(matrix=mat, alpha=False)
             pix.save(output_file)
             doc.close()
