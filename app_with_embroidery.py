@@ -615,20 +615,20 @@ with st.sidebar:
             st.session_state.artbot_history = []
             st.rerun()
 
-    # Render full conversation history
-    for msg in st.session_state.artbot_history:
-        if msg['role'] == 'user':
-            with st.chat_message("user"):
-                st.markdown(msg['content'])
-        else:
-            with st.chat_message("assistant", avatar="🤖"):
-                st.markdown(msg['content'])
+    # Scrollable chat history box
+    if st.session_state.artbot_history:
+        chat_html = ""
+        for msg in st.session_state.artbot_history:
+            if msg["role"] == "user":
+                chat_html += f'''<div style="margin:6px 0;padding:8px 12px;background:#2b2d42;border-radius:12px 12px 4px 12px;color:#fff;font-size:0.88rem;text-align:right;">{msg["content"]}</div>'''
+            else:
+                chat_html += f'''<div style="margin:6px 0;padding:8px 12px;background:#1e3a5f;border-radius:12px 12px 12px 4px;color:#e0e0e0;font-size:0.88rem;">🤖 {msg["content"]}</div>'''
+        st.markdown(f"""<div style="height:350px;overflow-y:auto;padding:8px;border:1px solid #333;border-radius:8px;background:#111;margin-bottom:8px;">{chat_html}</div>""", unsafe_allow_html=True)
 
-    # Chat input
-    st.divider()
+    # Always-visible input at bottom
     col_in, col_btn = st.columns([4, 1])
     with col_in:
-        question_input = st.text_input("msg", placeholder="Ask about files, colors, decoration methods...", key="artbot_input", label_visibility="collapsed")
+        question_input = st.text_input("msg", placeholder="Ask ArtBot anything...", key="artbot_input", label_visibility="collapsed")
     with col_btn:
         send = st.button("➤", use_container_width=True, type="primary")
     question = question_input.strip() if send and question_input.strip() else None
