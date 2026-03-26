@@ -624,8 +624,14 @@ with st.sidebar:
             with st.chat_message("assistant", avatar="🤖"):
                 st.markdown(msg['content'])
 
-    # Chat input — always last so it anchors to bottom
-    question = st.chat_input("Ask about files, colors, decoration methods...")
+    # Chat input
+    st.divider()
+    col_in, col_btn = st.columns([4, 1])
+    with col_in:
+        question_input = st.text_input("msg", placeholder="Ask about files, colors, decoration methods...", key="artbot_input", label_visibility="collapsed")
+    with col_btn:
+        send = st.button("➤", use_container_width=True, type="primary")
+    question = question_input.strip() if send and question_input.strip() else None
 
     if question:
         # Show user message immediately
