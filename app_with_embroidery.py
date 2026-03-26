@@ -509,7 +509,11 @@ class PreviewGenerator:
         """Return accurate file type label"""
         if ext == '.svg' and self._svg_has_embedded_raster(input_file):
             return 'SVG (embedded raster)'
-        elif ext in ['.pdf', '.ai', '.eps']:
+        elif ext == '.eps':
+            return 'Vector (EPS)'
+        elif ext == '.ai':
+            return 'Vector (AI)'
+        elif ext == '.pdf':
             return 'Vector (PDF)'
         return 'Vector'
 
