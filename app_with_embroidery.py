@@ -590,9 +590,30 @@ with st.sidebar:
     st.markdown("### 🤖 Ask ArtBot")
     st.caption("Your AI production assistant - 20+ years of industry knowledge")
 
+    # Static controls ABOVE chat history so input always anchors to bottom
+    with st.expander("💡 Example Questions"):
+        examples = [
+            "What file format for screen printing?",
+            "How many colors for embroidery?",
+            "What DPI for a 2 inch logo?",
+            "Can I use gradients on shirts?",
+            "What's wrong with my Pantone colors?",
+            "Difference between vector and raster?",
+            "What's a stitch count?",
+            "Why did my file get rejected?"
+        ]
+        for ex in examples:
+            st.markdown(f"• {ex}")
+
     # Initialize conversation history
     if 'artbot_history' not in st.session_state:
         st.session_state.artbot_history = []
+
+    # Clear conversation
+    if st.session_state.artbot_history:
+        if st.button("🔄 Clear Conversation", use_container_width=True):
+            st.session_state.artbot_history = []
+            st.rerun()
 
     # Render full conversation history
     for msg in st.session_state.artbot_history:
@@ -603,7 +624,7 @@ with st.sidebar:
             with st.chat_message("assistant", avatar="🤖"):
                 st.markdown(msg['content'])
 
-    # Chat input (stays at bottom of sidebar)
+    # Chat input — always last so it anchors to bottom
     question = st.chat_input("Ask about files, colors, decoration methods...")
 
     if question:
@@ -620,7 +641,6 @@ with st.sidebar:
                 import anthropic
                 client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
 
-                # Build messages without the latest user msg (already appended above)
                 messages = st.session_state.artbot_history.copy()
 
                 full_response = ""
@@ -643,27 +663,6 @@ with st.sidebar:
                 err = f"⚠️ ArtBot error: {str(e)}"
                 st.markdown(err)
                 st.session_state.artbot_history.append({"role": "assistant", "content": err})
-
-    # Clear conversation
-    if st.session_state.artbot_history:
-        if st.button("🔄 Clear Conversation", use_container_width=True):
-            st.session_state.artbot_history = []
-            st.rerun()
-
-    # Example questions
-    with st.expander("💡 Example Questions"):
-        examples = [
-            "What file format for screen printing?",
-            "How many colors for embroidery?",
-            "What DPI for a 2 inch logo?",
-            "Can I use gradients on shirts?",
-            "What's wrong with my Pantone colors?",
-            "Difference between vector and raster?",
-            "What's a stitch count?",
-            "Why did my file get rejected?"
-        ]
-        for ex in examples:
-            st.markdown(f"• {ex}")
 
     st.divider()
     st.markdown("**💡 Save your art team 15+ hours/week**")
@@ -752,7 +751,10 @@ if uploaded_file:
                 
                 with col2:
                     st.markdown("### Preview Info")
-                    st.metric("Dimensions", f"{result['width']} × {result['height']} px")
+                    w_in = round(result["width"] / 300, 2)
+                    h_in = round(result["height"] / 300, 2)
+                    st.metric("Dimensions (px)", f"{result["width"]} × {result["height"]}")
+                    st.metric("Size @ 300dpi", f"{w_in}in × {h_in}in")
                     st.metric("File Size", f"{result['size_kb']} KB")
                     st.metric("File Type", result['file_type'].title())
                     
