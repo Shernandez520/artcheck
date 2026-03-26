@@ -588,40 +588,60 @@ st.markdown('<p class="tagline">Vector & Embroidery File Preview Generator + AI 
 
 with st.sidebar:
     st.markdown("### 🤖 Ask ArtBot")
-    st.caption("20+ years of industry knowledge")
+    st.caption("Your AI production assistant - 20+ years of industry knowledge")
 
-    if 'artbot_history' not in st.session_state:
+    if "artbot_history" not in st.session_state:
         st.session_state.artbot_history = []
+    if "artbot_input_value" not in st.session_state:
+        st.session_state.artbot_input_value = ""
 
-    # Scrollable chat history
+    # Scrollable chat history box
     chat_html = ""
+    if not st.session_state.artbot_history:
+        chat_html = '<div style="color:#666;font-size:0.85rem;text-align:center;padding-top:30px;">Ask me anything about files,<br>colors, or decoration methods!</div>'
     for msg in st.session_state.artbot_history:
         if msg["role"] == "user":
             chat_html += f'''<div style="margin:4px 0;padding:6px 10px;background:#2b2d42;border-radius:10px 10px 3px 10px;color:#fff;font-size:0.85rem;text-align:right;">{msg["content"]}</div>'''
         else:
             chat_html += f'''<div style="margin:4px 0;padding:6px 10px;background:#1e3a5f;border-radius:10px 10px 10px 3px;color:#e0e0e0;font-size:0.85rem;">🤖 {msg["content"]}</div>'''
     st.markdown(
-        f'''<div style="height:420px;overflow-y:auto;padding:6px;border:1px solid #333;border-radius:8px;background:#111;margin-bottom:8px;">{chat_html}</div>''',
+        f'''<div style="height:380px;overflow-y:auto;padding:6px;border:1px solid #333;border-radius:8px;background:#111;margin-bottom:8px;">{chat_html}</div>''',
         unsafe_allow_html=True
     )
 
-    # Input pinned below history
+    # Example question chips — only show when no history
+    if not st.session_state.artbot_history:
+        st.caption("💡 Try one of these:")
+        examples = [
+            "What file format for screen printing?",
+            "How many colors for embroidery?",
+            "What DPI for a 2 inch logo?",
+            "Difference between vector and raster?",
+        ]
+        for ex in examples:
+            if st.button(ex, use_container_width=True, key=f"ex_{ex}"):
+                st.session_state.artbot_input_value = ex
+
+    # Input + send button
     q_col, btn_col = st.columns([5, 1])
     with q_col:
-        question_input = st.text_input("q", placeholder="Ask anything...", key="artbot_input", label_visibility="collapsed")
+        question_input = st.text_input("q", value=st.session_state.artbot_input_value,
+            placeholder="Ask anything...", key="artbot_input", label_visibility="collapsed")
     with btn_col:
         send = st.button("➤", use_container_width=True, type="primary")
 
     if st.session_state.artbot_history:
-        if st.button("🔄 Clear", use_container_width=True):
+        if st.button("🔄 Clear conversation", use_container_width=True):
             st.session_state.artbot_history = []
+            st.session_state.artbot_input_value = ""
             st.rerun()
 
     question = question_input.strip() if send and question_input.strip() else None
 
     if question:
+        st.session_state.artbot_input_value = ""  # Clear input on next rerun
         st.session_state.artbot_history.append({"role": "user", "content": question})
-        with st.spinner("thinking..."):
+        with st.spinner("🤖 thinking..."):
             try:
                 import anthropic
                 client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
