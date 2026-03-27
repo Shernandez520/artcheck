@@ -931,40 +931,49 @@ class ColorExtractor:
                 except:
                     pass
 
-            # Raw PostScript CMYK scan — fallback when fitz only returns RGB
-            # For CMYK docs, parse the content stream directly for k (black tint) and
-            # setcmykcolor values which give us the real CMYK values
+            # Raw decompressed content stream CMYK scan
+            # fitz.get_drawings() normalizes colors to RGB, losing CMYK info.
+            # Use page.get_contents() which gives decompressed PostScript with real CMYK ops.
             if not spot_colors and not any(v.get('space') == 'CMYK' for v in fills.values()):
                 try:
                     import re
-                    with open(input_file, 'rb') as f:
-                        raw = f.read()
-                    raw_text = raw.decode('latin-1', errors='ignore')
+                    doc3 = fitz.open(input_file)
+                    page3 = doc3[0]
+                    # get_contents() returns decompressed stream bytes
+                    stream_text = page3.read_contents().decode('latin-1', errors='ignore')
+                    doc3.close()
 
-                    # CMYK values: 0 0 0 0.4 k or 0 0 0 0.4 K (black tint)
-                    k_hits = re.findall(r'0\s+0\s+0\s+([\d.]+)\s+[kK]', raw_text)
-                    cmyk_hits = re.findall(r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+k', raw_text)
+                    cmyk_found = {}
 
-                    seen_k = set()
-                    for k_val in k_hits:
-                        k = float(k_val)
-                        if k <= 0 or k > 1: continue
-                        k_pct = round(k * 100)
-                        label = f"K:{k_pct}% (Black {k_pct}%)"
-                        if label not in seen_k:
-                            seen_k.add(label)
-                            hex_val, rgb_val = self._cmyk_to_hex(0, 0, 0, k)
-                            fills[label] = {'label': label, 'hex': hex_val, 'rgb': rgb_val,
-                                           'space': 'CMYK', 'opacity': 100}
-
+                    # Full CMYK: c m y k k (lowercase = fill, uppercase = stroke)
+                    cmyk_hits = re.findall(r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+k', stream_text)
                     for match in cmyk_hits:
                         c, m, y, k = [float(x) for x in match]
                         if self._is_registration_color(c, m, y, k): continue
-                        label = self._format_cmyk(c, m, y, k)
-                        if label not in fills:
+                        if c == 0 and m == 0 and y == 0:
+                            k_pct = round(k * 100)
+                            label = f"K:{k_pct}% (Black {k_pct}%)"
+                        else:
+                            label = self._format_cmyk(c, m, y, k)
+                        if label not in cmyk_found:
                             hex_val, rgb_val = self._cmyk_to_hex(c, m, y, k)
-                            fills[label] = {'label': label, 'hex': hex_val, 'rgb': rgb_val,
-                                           'space': 'CMYK', 'opacity': 100}
+                            cmyk_found[label] = {'label': label, 'hex': hex_val,
+                                                'rgb': rgb_val, 'space': 'CMYK', 'opacity': 100}
+
+                    # Also catch grayscale: g G operators (0=black, 1=white)
+                    gray_hits = re.findall(r'([\d.]+)\s+g(?=\s)', stream_text)
+                    for g_str in gray_hits:
+                        g = float(g_str)
+                        if g >= 1.0: continue  # skip white
+                        k_pct = round((1 - g) * 100)
+                        label = f"K:{k_pct}% (Black {k_pct}%)"
+                        if label not in cmyk_found:
+                            hex_val, rgb_val = self._cmyk_to_hex(0, 0, 0, 1-g)
+                            cmyk_found[label] = {'label': label, 'hex': hex_val,
+                                                'rgb': rgb_val, 'space': 'CMYK', 'opacity': 100}
+
+                    if cmyk_found:
+                        fills = cmyk_found  # Replace RGB approximations with real CMYK
                 except:
                     pass
 
