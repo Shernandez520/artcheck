@@ -900,39 +900,43 @@ class ColorExtractor:
             return results
 
     def _detect_color_mode_pdf(self, input_file):
-        """Detect document color mode from PDF/AI xref objects + raw byte scan"""
+        """Detect document color mode from PDF/AI xref objects + full raw byte scan"""
+        has_cmyk = False
+        has_rgb = False
+        has_spot = False
         try:
-            import fitz, re
+            import fitz
             doc = fitz.open(input_file)
-            has_cmyk = False
-            has_rgb = False
-            has_spot = False
-            for xref in range(1, min(doc.xref_count(), 200)):
+            for xref in range(1, min(doc.xref_count(), 500)):
                 try:
                     obj = doc.xref_object(xref)
                     if '/DeviceCMYK' in obj: has_cmyk = True
                     if '/DeviceRGB' in obj: has_rgb = True
                     if '/Separation' in obj or 'PANTONE' in obj: has_spot = True
                 except: pass
-            page = doc[0]
-            for d in page.get_drawings():
-                fill = d.get('fill') or []
-                if len(fill) == 4: has_cmyk = True
-                if len(fill) == 3: has_rgb = True
+            try:
+                page = doc[0]
+                for d in page.get_drawings():
+                    fill = d.get('fill') or []
+                    if len(fill) == 4: has_cmyk = True
+                    if len(fill) == 3: has_rgb = True
+            except: pass
             doc.close()
-            # Also raw scan for PANTONE/CMYK keywords
+        except: pass
+        try:
+            # Full file raw scan — read entire file for keyword detection
             with open(input_file, 'rb') as f:
-                raw = f.read(100000).decode('latin-1', errors='ignore')
+                raw = f.read().decode('latin-1', errors='ignore')
             if 'PANTONE' in raw or '/Separation' in raw: has_spot = True
-            if 'DeviceCMYK' in raw or 'setcmykcolor' in raw or 'CMYK' in raw: has_cmyk = True
-            if has_spot and has_cmyk: return 'Spot + CMYK'
-            if has_spot: return 'Spot Color'
-            if has_cmyk and has_rgb: return 'Mixed (CMYK + RGB)'
-            if has_cmyk: return 'CMYK'
-            if has_rgb: return 'RGB'
-            return 'Unknown'
-        except:
-            return 'Unknown'
+            if 'DeviceCMYK' in raw or 'setcmykcolor' in raw: has_cmyk = True
+            if 'DeviceRGB' in raw or 'setrgbcolor' in raw: has_rgb = True
+        except: pass
+        if has_spot and has_cmyk: return 'Spot + CMYK'
+        if has_spot: return 'Spot Color'
+        if has_cmyk and has_rgb: return 'Mixed (CMYK + RGB)'
+        if has_cmyk: return 'CMYK'
+        if has_rgb: return 'RGB'
+        return 'Unknown'
 
     def _detect_color_mode_eps(self, input_file):
         """Detect document color mode from EPS DSC comments"""
@@ -1056,7 +1060,9 @@ def render_color_results(color_data, file_ext):
     if color_data.get('spot_colors'):
         st.markdown("**🎯 Spot Colors (Pantone/Named):**")
         for sc in color_data['spot_colors']:
-            st.markdown(f"• 🔵 `{sc['label']}`")
+            label = sc['label']
+            swatch = '<span style="display:inline-block;width:16px;height:16px;background:#888;border:1px solid #666;border-radius:3px;vertical-align:middle;margin-right:6px;"></span>'
+            st.markdown(f"{swatch}<code>{label}</code>", unsafe_allow_html=True)
 
     # Fill colors
     if color_data.get('fills'):
