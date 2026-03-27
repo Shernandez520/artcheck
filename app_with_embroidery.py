@@ -1356,11 +1356,6 @@ with st.sidebar:
     st.markdown("### 🤖 Ask ArtBot")
     st.caption("Your AI production assistant - 20+ years of industry knowledge")
     st.markdown("""
-<div style="background:#2a1f1f;border-radius:6px;padding:8px 12px;margin-bottom:8px;border-left:3px solid #cc4444;font-size:0.78rem;color:#ccc;">
-⚠️ <strong style="color:#ff9999;">Disclaimer:</strong> ArtBot is an AI assistant and may occasionally make mistakes. Always confirm critical production specs with your decorator or supplier before production. Pricing guidance is approximate.
-</div>
-""", unsafe_allow_html=True)
-    st.markdown("""
 <div style="background:#1a2535;border-radius:8px;padding:12px 14px;margin-bottom:10px;border-left:3px solid #667eea;">
   <div style="font-size:1.3rem;font-weight:bold;color:#fff;margin-bottom:6px;">🤖 Got a file issue? Ask me.</div>
   <div style="font-size:0.95rem;color:#a0b8d0;margin-bottom:8px;">📁 File fixes &nbsp;·&nbsp; 🎨 Color questions &nbsp;·&nbsp; 🧵 Decoration methods &nbsp;·&nbsp; ✅ Best practices</div>
@@ -1454,6 +1449,12 @@ with st.sidebar:
         st.session_state.artbot_pending = question_input.strip()
         st.session_state.artbot_input_key += 1
         st.rerun()
+
+    st.markdown("""
+<div style="background:#2a1f1f;border-radius:6px;padding:8px 12px;margin-top:8px;border-left:3px solid #cc4444;font-size:0.78rem;color:#ccc;">
+⚠️ <strong style="color:#ff9999;">Disclaimer:</strong> ArtBot is an AI assistant and may occasionally make mistakes. Always confirm critical production specs with your decorator or supplier before production. Pricing guidance is approximate.
+</div>
+""", unsafe_allow_html=True)
 
 # ============================================================================
 # FILE UPLOAD SECTION
