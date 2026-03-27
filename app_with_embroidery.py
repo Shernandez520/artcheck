@@ -939,22 +939,23 @@ class ColorExtractor:
         return 'Unknown'
 
     def _detect_color_mode_eps(self, input_file):
-        """Detect document color mode from EPS DSC comments"""
+        """Detect document color mode from EPS file"""
+        has_spot = False
+        has_cmyk = False
+        has_rgb = False
         try:
             import re
             with open(input_file, 'r', errors='ignore') as f:
-                header = f.read(5000)
-            if re.search(r'PANTONE|Separation', header):
-                if re.search(r'setcmykcolor|DeviceCMYK', header):
-                    return 'Spot + CMYK'
-                return 'Spot Color'
-            if re.search(r'setcmykcolor|DeviceCMYK', header):
-                return 'CMYK'
-            if re.search(r'setrgbcolor|DeviceRGB', header):
-                return 'RGB'
-            return 'Unknown'
-        except:
-            return 'Unknown'
+                full = f.read()
+            if re.search(r'PANTONE|Separation', full): has_spot = True
+            if re.search(r'setcmykcolor|DeviceCMYK|CMYKCustomColor', full): has_cmyk = True
+            if re.search(r'setrgbcolor|DeviceRGB', full): has_rgb = True
+        except: pass
+        if has_spot and has_cmyk: return 'Spot + CMYK'
+        if has_spot: return 'Spot Color'
+        if has_cmyk: return 'CMYK'
+        if has_rgb: return 'RGB'
+        return 'Unknown'
 
     def _detect_color_mode_svg(self, content):
         """Detect color mode from SVG content"""
