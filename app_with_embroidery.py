@@ -1085,9 +1085,12 @@ class ColorExtractor:
                 try:
                     with open(input_file, 'r', errors='ignore') as f:
                         eps_text = f.read()
+                    import string
                     for sp in re.findall(r'\(([^)]*(?:PANTONE|Pantone|PMS)[^)]*)\)', eps_text):
                         sp = sp.strip()
-                        if sp: spot_colors[sp] = {'label': sp, 'type': 'spot'}
+                        # Skip garbage binary matches - valid Pantone names are printable ASCII
+                        if sp and len(sp) < 50 and all(c in string.printable for c in sp):
+                            spot_colors[sp] = {'label': sp, 'type': 'spot'}
                 except: pass
 
                 has_spots = bool(spot_colors)
