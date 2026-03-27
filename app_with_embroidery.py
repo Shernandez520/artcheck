@@ -727,25 +727,36 @@ class ColorExtractor:
                 if drawing.get('type') == 'sh':
                     gradients.append({'type': 'gradient', 'label': 'Gradient detected'})
 
-            # Check for spot colors in page resources
-            try:
-                xref_list = page.get_contents()
-                content_stream = b""
-                for xref in xref_list:
-                    content_stream += doc.xref_stream(xref)
-                stream_text = content_stream.decode('latin-1', errors='ignore')
+            doc.close()
 
-                # Look for spot color definitions (CS /SpotName CS or SCN patterns)
+            # Scan ALL xref objects for spot color / Separation definitions
+            # This is where Pantone names live in Illustrator-generated PDFs
+            try:
                 import re
-                spot_patterns = re.findall(r'/([A-Za-z0-9\s\-\.]+(?:PANTONE|Pantone|PMS)[A-Za-z0-9\s\-\.]+)', stream_text)
-                for sp in spot_patterns:
-                    sp = sp.strip()
-                    if sp and sp not in spot_colors:
-                        spot_colors[sp] = {'label': sp, 'type': 'spot'}
+                doc2 = fitz.open(input_file)
+                for xref in range(1, doc2.xref_count()):
+                    try:
+                        obj_str = doc2.xref_object(xref)
+                        if not obj_str:
+                            continue
+                        # /Separation colorspace with name
+                        sep_paren = re.findall(r'/Separation\s*\(([^)]+)\)', obj_str)
+                        sep_slash = re.findall(r'/Separation\s*/([^\s/\[\]<>()]+)', obj_str)
+                        for name in sep_paren + sep_slash:
+                            name = name.strip()
+                            if name and name not in ('All', 'None', 'Black', 'White', 'Cyan', 'Magenta', 'Yellow'):
+                                spot_colors[name] = {'label': name, 'type': 'spot'}
+                        # Also catch PANTONE anywhere in obj string
+                        pantone_hits = re.findall(r'(PANTONE[^/\(\)\[\]<>\n]{1,40})', obj_str)
+                        for ph in pantone_hits:
+                            ph = ph.strip().rstrip(')(')
+                            if ph and ph not in spot_colors:
+                                spot_colors[ph] = {'label': ph, 'type': 'spot'}
+                    except:
+                        pass
+                doc2.close()
             except:
                 pass
-
-            doc.close()
 
             results['fills'] = list(fills.values())
             results['strokes'] = list(strokes.values())
