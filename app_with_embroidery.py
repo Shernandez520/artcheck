@@ -775,43 +775,64 @@ class ColorExtractor:
             results['warnings'].append(f"Color extraction error: {str(e)}")
             return results
 
+    def _is_registration_color(self, c, m, y, k):
+        """Filter out pure primaries and registration artifacts"""
+        vals = (round(c,1), round(m,1), round(y,1), round(k,1))
+        artifacts = [
+            (1,0,0,0), (0,1,0,0), (0,0,1,0), (0,0,0,1),  # pure primaries
+            (1,1,1,1),  # registration black
+            (0,0,0,0),  # paper white
+        ]
+        return vals in artifacts
+
     def _extract_from_eps(self, input_file, results):
         """Extract colors from EPS by parsing PostScript"""
         try:
             with open(input_file, 'r', errors='ignore') as f:
-                content = f.read(50000)  # Read first 50KB
+                content = f.read(50000)
 
             import re
             fills = {}
             strokes = {}
             spot_colors = {}
 
-            # CMYK setcmykcolor / setcmykcolorspace
-            cmyk_patterns = re.findall(
-                r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+(?:setcmykcolor|k|K)', content)
-            for match in cmyk_patterns:
-                c, m, y, k = [float(x) for x in match]
-                label = self._format_cmyk(c, m, y, k)
-                hex_val, rgb = self._cmyk_to_hex(c, m, y, k)
-                fills[label] = {'label': label, 'hex': hex_val, 'rgb': rgb,
-                               'space': 'CMYK', 'opacity': 100}
-
-            # Grayscale setgray
-            gray_patterns = re.findall(r'([\d.]+)\s+setgray', content)
-            for g in gray_patterns:
-                gray = float(g)
-                k_pct = round((1 - gray) * 100)
-                label = f"K:{k_pct}% (Black {k_pct}%)"
-                hex_val, rgb = self._cmyk_to_hex(0, 0, 0, 1-gray)
-                fills[label] = {'label': label, 'hex': hex_val, 'rgb': rgb,
-                               'space': 'Grayscale', 'opacity': 100}
-
-            # Spot colors
+            # Spot colors first — if spot colors found, skip CMYK artifacts
             spot_patterns = re.findall(r'\(([^)]*(?:PANTONE|Pantone|PMS)[^)]*)\)', content)
             for sp in spot_patterns:
                 sp = sp.strip()
                 if sp:
                     spot_colors[sp] = {'label': sp, 'type': 'spot'}
+
+            has_spots = len(spot_colors) > 0
+
+            # CMYK - only include if not registration artifacts
+            cmyk_patterns = re.findall(
+                r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+(?:setcmykcolor)', content)
+            for match in cmyk_patterns:
+                c, m, y, k = [float(x) for x in match]
+                # Skip registration artifacts and pure primaries
+                if self._is_registration_color(c, m, y, k):
+                    continue
+                # Skip K-only colors if we already have spot colors (likely tint of spot)
+                if has_spots and c == 0 and m == 0 and y == 0:
+                    continue
+                label = self._format_cmyk(c, m, y, k)
+                hex_val, rgb = self._cmyk_to_hex(c, m, y, k)
+                fills[label] = {'label': label, 'hex': hex_val, 'rgb': rgb,
+                               'space': 'CMYK', 'opacity': 100}
+
+            # Grayscale - only if no spots detected
+            if not has_spots:
+                gray_patterns = re.findall(r'([\d.]+)\s+setgray', content)
+                for g in gray_patterns:
+                    gray = float(g)
+                    if gray in [0.0, 1.0]:  # Skip pure black/white artifacts
+                        continue
+                    k_pct = round((1 - gray) * 100)
+                    label = f"K:{k_pct}% (Black {k_pct}%)"
+                    hex_val, rgb = self._cmyk_to_hex(0, 0, 0, 1-gray)
+                    fills[label] = {'label': label, 'hex': hex_val, 'rgb': rgb,
+                                   'space': 'Grayscale', 'opacity': 100}
 
             results['fills'] = list(fills.values())
             results['strokes'] = list(strokes.values())
@@ -819,7 +840,7 @@ class ColorExtractor:
 
             if not results['fills'] and not results['spot_colors']:
                 results['warnings'].append("Could not extract color data from this EPS file.")
-            
+
             total_colors = len(results['fills']) + len(results['spot_colors'])
             if total_colors > 6:
                 results['warnings'].append(f"⚠️ {total_colors} colors detected — screen printing typically supports 4-6 colors max")
