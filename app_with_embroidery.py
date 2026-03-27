@@ -931,12 +931,49 @@ class ColorExtractor:
                 except:
                     pass
 
+            # Raw PostScript CMYK scan — fallback when fitz only returns RGB
+            # For CMYK docs, parse the content stream directly for k (black tint) and
+            # setcmykcolor values which give us the real CMYK values
+            if not spot_colors and not any(v.get('space') == 'CMYK' for v in fills.values()):
+                try:
+                    import re
+                    with open(input_file, 'rb') as f:
+                        raw = f.read()
+                    raw_text = raw.decode('latin-1', errors='ignore')
+
+                    # CMYK values: 0 0 0 0.4 k or 0 0 0 0.4 K (black tint)
+                    k_hits = re.findall(r'0\s+0\s+0\s+([\d.]+)\s+[kK]', raw_text)
+                    cmyk_hits = re.findall(r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+k', raw_text)
+
+                    seen_k = set()
+                    for k_val in k_hits:
+                        k = float(k_val)
+                        if k <= 0 or k > 1: continue
+                        k_pct = round(k * 100)
+                        label = f"K:{k_pct}% (Black {k_pct}%)"
+                        if label not in seen_k:
+                            seen_k.add(label)
+                            hex_val, rgb_val = self._cmyk_to_hex(0, 0, 0, k)
+                            fills[label] = {'label': label, 'hex': hex_val, 'rgb': rgb_val,
+                                           'space': 'CMYK', 'opacity': 100}
+
+                    for match in cmyk_hits:
+                        c, m, y, k = [float(x) for x in match]
+                        if self._is_registration_color(c, m, y, k): continue
+                        label = self._format_cmyk(c, m, y, k)
+                        if label not in fills:
+                            hex_val, rgb_val = self._cmyk_to_hex(c, m, y, k)
+                            fills[label] = {'label': label, 'hex': hex_val, 'rgb': rgb_val,
+                                           'space': 'CMYK', 'opacity': 100}
+                except:
+                    pass
+
             # Suppress RGB fills when we have better color data:
             # - If spot colors found: RGB are fitz approximations, useless
             # - If doc is CMYK: RGB are fitz conversions, misleading
             # RGB fills only shown if doc is genuinely RGB with no spot/CMYK data
             color_mode = results.get('color_mode', 'Unknown')
-            suppress_rgb = spot_colors or ('CMYK' in color_mode and 'RGB' not in color_mode)
+            suppress_rgb = spot_colors or ('CMYK' in color_mode and 'RGB' not in color_mode) or any(v.get('space') == 'CMYK' for v in fills.values())
             if suppress_rgb:
                 fills = {k: v for k, v in fills.items() if v.get('space') != 'RGB'}
                 strokes = {k: v for k, v in strokes.items() if v.get('space') != 'RGB'}
