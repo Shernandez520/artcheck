@@ -1058,6 +1058,31 @@ def render_color_results(color_data, file_ext):
         for w in color_data['warnings']:
             st.warning(w)
 
+
+# ============================================================================
+# SIDEBAR - ASK ARTBOT
+# ============================================================================
+
+with st.sidebar:
+    st.markdown("### 🤖 Ask ArtBot")
+    st.caption("Your AI production assistant - 20+ years of industry knowledge")
+    st.markdown("""
+<div style="background:#1a2535;border-radius:8px;padding:12px 14px;margin-bottom:10px;border-left:3px solid #667eea;">
+  <div style="font-size:1.3rem;font-weight:bold;color:#fff;margin-bottom:6px;">🤖 Got a file issue? Ask me.</div>
+  <div style="font-size:0.95rem;color:#a0b8d0;margin-bottom:8px;">📁 File fixes &nbsp;·&nbsp; 🎨 Color questions &nbsp;·&nbsp; 🧵 Decoration methods &nbsp;·&nbsp; ✅ Best practices</div>
+  <div style="font-size:0.9rem;color:#b0c4de;">Tell me what's going on and I'll tell you exactly how to tackle it and what to say to your customer.</div>
+</div>
+""", unsafe_allow_html=True)
+
+    if "artbot_history" not in st.session_state:
+        st.session_state.artbot_history = []
+    if "artbot_input_value" not in st.session_state:
+        st.session_state.artbot_input_value = ""
+    if "artbot_input_key" not in st.session_state:
+        st.session_state.artbot_input_key = 0
+    if "artbot_pending" not in st.session_state:
+        st.session_state.artbot_pending = None
+
     # Handle pending question (from example buttons or send)
     def _run_artbot(question):
         st.session_state.artbot_history.append({"role": "user", "content": question})
