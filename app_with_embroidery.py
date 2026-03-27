@@ -468,7 +468,7 @@ class PreviewGenerator:
             longest = max(rect.width, rect.height)
             scale = max(10, 1200 / longest)  # At least 10x, enough to hit 1200px
             mat = self.fitz.Matrix(scale, scale)
-            pix = page.get_pixmap(matrix=mat, alpha=False)
+            pix = page.get_pixmap(matrix=mat, alpha=True)
             pix.save(output_file)
             doc.close()
             return os.path.exists(output_file) and os.path.getsize(output_file) > 0
