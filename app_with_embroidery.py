@@ -675,13 +675,15 @@ class ColorExtractor:
                             fills[key] = {'label': label, 'hex': hex_val, 'rgb': rgb,
                                          'space': 'CMYK', 'opacity': opacity,
                                          'raw': (c, m, y, k)}
-                    elif len(fill) == 3:  # RGB
+                    elif len(fill) == 3:  # fitz returns RGB for CMYK docs too — skip
+                        # RGB fills from fitz are unreliable for production use.
+                        # We only store them if we have no better data (handled after loop).
                         r, g, b = fill
                         label = f"R:{round(r*255)} G:{round(g*255)} B:{round(b*255)}"
-                        hex_val, rgb = self._rgb_to_hex(r, g, b)
+                        hex_val, rgb_val = self._rgb_to_hex(r, g, b)
                         key = label
                         if key not in fills:
-                            fills[key] = {'label': label, 'hex': hex_val, 'rgb': rgb,
+                            fills[key] = {'label': label, 'hex': hex_val, 'rgb': rgb_val,
                                          'space': 'RGB', 'opacity': opacity}
                     elif len(fill) == 1:  # Grayscale
                         gray = fill[0]
@@ -711,10 +713,10 @@ class ColorExtractor:
                     elif len(stroke) == 3:
                         r, g, b = stroke
                         label = f"R:{round(r*255)} G:{round(g*255)} B:{round(b*255)}"
-                        hex_val, rgb = self._rgb_to_hex(r, g, b)
+                        hex_val, rgb_val = self._rgb_to_hex(r, g, b)
                         key = f"{label}|{width}"
                         if key not in strokes:
-                            strokes[key] = {'label': label, 'hex': hex_val, 'rgb': rgb,
+                            strokes[key] = {'label': label, 'hex': hex_val, 'rgb': rgb_val,
                                            'space': 'RGB', 'width': width}
                     elif len(stroke) == 1:
                         gray = stroke[0]
@@ -782,12 +784,18 @@ class ColorExtractor:
                 except:
                     pass
 
-            # If spot colors found, suppress RGB fills entirely — they are just
-            # fitz approximations of the spot colors and will cause confusion
-            if spot_colors:
-                fills = {}
+            # Suppress RGB fills when we have better color data:
+            # - If spot colors found: RGB are fitz approximations, useless
+            # - If doc is CMYK: RGB are fitz conversions, misleading
+            # RGB fills only shown if doc is genuinely RGB with no spot/CMYK data
+            color_mode = results.get('color_mode', 'Unknown')
+            suppress_rgb = spot_colors or ('CMYK' in color_mode and 'RGB' not in color_mode)
+            if suppress_rgb:
+                fills = {k: v for k, v in fills.items() if v.get('space') != 'RGB'}
+                strokes = {k: v for k, v in strokes.items() if v.get('space') != 'RGB'}
 
             results['fills'] = list(fills.values())
+            results['strokes'] = list(strokes.values())
             results['strokes'] = list(strokes.values())
             results['spot_colors'] = list(spot_colors.values())
             results['gradients'] = gradients
@@ -877,8 +885,6 @@ class ColorExtractor:
                     fills[label] = {'label': label, 'hex': hex_val, 'rgb': rgb,
                                    'space': 'Grayscale', 'opacity': 100}
 
-            results['fills'] = list(fills.values())
-            results['strokes'] = list(strokes.values())
             results['spot_colors'] = list(spot_colors.values())
 
             if not results['fills'] and not results['spot_colors']:
