@@ -655,6 +655,9 @@ class ColorExtractor:
                 pass
 
             # Extract via drawings (paths with fill/stroke info)
+            # Detect document color mode
+            results['color_mode'] = self._detect_color_mode_pdf(input_file)
+
             drawings = page.get_drawings()
             for drawing in drawings:
                 # Fill color
@@ -749,7 +752,7 @@ class ColorExtractor:
                         # Also catch PANTONE anywhere in obj string
                         pantone_hits = re.findall(r'(PANTONE[^/\(\)\[\]<>\n]{1,40})', obj_str)
                         for ph in pantone_hits:
-                            ph = ph.strip().rstrip(')(')
+                            ph = ph.strip().strip('"-\'')
                             if ph and ph not in spot_colors:
                                 spot_colors[ph] = {'label': ph, 'type': 'spot'}
                     except:
@@ -807,6 +810,9 @@ class ColorExtractor:
             strokes = {}
             spot_colors = {}
 
+            # Detect document color mode
+            results['color_mode'] = self._detect_color_mode_eps(input_file)
+
             # Spot colors first — if spot colors found, skip CMYK artifacts
             spot_patterns = re.findall(r'\(([^)]*(?:PANTONE|Pantone|PMS)[^)]*)\)', content)
             for sp in spot_patterns:
@@ -861,6 +867,65 @@ class ColorExtractor:
             results['warnings'].append(f"EPS color extraction error: {str(e)}")
             return results
 
+    def _detect_color_mode_pdf(self, input_file):
+        """Detect document color mode from PDF/AI xref objects"""
+        try:
+            import fitz
+            doc = fitz.open(input_file)
+            has_cmyk = False
+            has_rgb = False
+            has_spot = False
+            for xref in range(1, min(doc.xref_count(), 200)):
+                try:
+                    obj = doc.xref_object(xref)
+                    if '/DeviceCMYK' in obj: has_cmyk = True
+                    if '/DeviceRGB' in obj: has_rgb = True
+                    if '/Separation' in obj or 'PANTONE' in obj: has_spot = True
+                except: pass
+            page = doc[0]
+            for d in page.get_drawings():
+                fill = d.get('fill') or []
+                if len(fill) == 4: has_cmyk = True
+                if len(fill) == 3: has_rgb = True
+            doc.close()
+            if has_spot and has_cmyk: return 'Spot + CMYK'
+            if has_spot: return 'Spot Color'
+            if has_cmyk and has_rgb: return 'Mixed (CMYK + RGB)'
+            if has_cmyk: return 'CMYK'
+            if has_rgb: return 'RGB'
+            return 'Unknown'
+        except:
+            return 'Unknown'
+
+    def _detect_color_mode_eps(self, input_file):
+        """Detect document color mode from EPS DSC comments"""
+        try:
+            import re
+            with open(input_file, 'r', errors='ignore') as f:
+                header = f.read(5000)
+            if re.search(r'PANTONE|Separation', header):
+                if re.search(r'setcmykcolor|DeviceCMYK', header):
+                    return 'Spot + CMYK'
+                return 'Spot Color'
+            if re.search(r'setcmykcolor|DeviceCMYK', header):
+                return 'CMYK'
+            if re.search(r'setrgbcolor|DeviceRGB', header):
+                return 'RGB'
+            return 'Unknown'
+        except:
+            return 'Unknown'
+
+    def _detect_color_mode_svg(self, content):
+        """Detect color mode from SVG content"""
+        import re
+        has_pantone = bool(re.search(r'pantone|PANTONE', content, re.IGNORECASE))
+        has_icc_cmyk = 'icc-color' in content and 'cmyk' in content.lower()
+        has_hex = bool(re.search(r'#[0-9a-fA-F]{3,6}', content))
+        if has_pantone: return 'Spot Color'
+        if has_icc_cmyk: return 'CMYK'
+        if has_hex: return 'RGB'
+        return 'Unknown'
+
     def _extract_from_svg(self, input_file, results):
         """Extract colors from SVG by parsing XML"""
         try:
@@ -870,35 +935,50 @@ class ColorExtractor:
 
             fills = {}
             strokes = {}
+            spot_colors = {}
 
-            # Find all fill and stroke values
+            results['color_mode'] = self._detect_color_mode_svg(content)
+
+            # Spot colors — Pantone names in id attributes or content
+            pantone_hits = re.findall(r'(?:PANTONE|Pantone)[^\s<>/]{1,40}', content)
+            for ph in pantone_hits:
+                ph = ph.strip().strip("\"-'")
+                if ph:
+                    spot_colors[ph] = {'label': ph, 'type': 'spot'}
+
+            named_colors = []  # covered by pantone_hits above
+            for nc in named_colors:
+                nc = nc.replace('-', ' ').strip()
+                if nc not in spot_colors:
+                    spot_colors[nc] = {'label': nc, 'type': 'spot'}
+
             fill_matches = re.findall(r'fill[\s:="\']+([#][0-9a-fA-F]{3,6})', content)
             stroke_matches = re.findall(r'stroke[\s:="\']+([#][0-9a-fA-F]{3,6})', content)
             stroke_widths = re.findall(r'stroke-width[\s:="\']+([\d.]+)', content)
 
-            skip = {'none', 'transparent', 'inherit', 'currentColor', 'url'}
+            has_spots = len(spot_colors) > 0
+            artifact_hex = {'#ffffff', '#000000', '#FFFFFF', '#000000'}
 
             for val in fill_matches:
-                if val.lower() in skip or val.startswith('url'):
+                if has_spots and val.lower() in artifact_hex:
                     continue
-                if val.startswith('#'):
-                    fills[val] = {'label': val.upper(), 'hex': val, 'space': 'RGB', 'opacity': 100}
+                fills[val] = {'label': val.upper(), 'hex': val, 'space': 'RGB', 'opacity': 100}
 
             avg_width = sum(float(w) for w in stroke_widths) / len(stroke_widths) if stroke_widths else 1.0
             for val in stroke_matches:
-                if val.lower() in skip or val.startswith('url'):
+                if has_spots and val.lower() in artifact_hex:
                     continue
-                if val.startswith('#'):
-                    strokes[val] = {'label': val.upper(), 'hex': val, 'space': 'RGB',
-                                   'width': avg_width, 'opacity': 100}
+                strokes[val] = {'label': val.upper(), 'hex': val, 'space': 'RGB',
+                               'width': avg_width, 'opacity': 100}
 
             results['fills'] = list(fills.values())
             results['strokes'] = list(strokes.values())
+            results['spot_colors'] = list(spot_colors.values())
 
-            if not results['fills']:
+            if not results['fills'] and not results['spot_colors']:
                 results['warnings'].append("Could not extract color data from this SVG.")
 
-            total = len(results['fills'])
+            total = len(results['fills']) + len(results['spot_colors'])
             if total > 6:
                 results['warnings'].append(f"⚠️ {total} colors detected — screen printing typically supports 4-6 colors max")
 
@@ -906,6 +986,7 @@ class ColorExtractor:
         except Exception as e:
             results['warnings'].append(f"SVG color extraction error: {str(e)}")
             return results
+
 
 
 def render_color_results(color_data, file_ext):
@@ -916,22 +997,33 @@ def render_color_results(color_data, file_ext):
     st.markdown("---")
     st.markdown("### 🎨 Color Analysis")
 
-    has_anything = (color_data['spot_colors'] or color_data['fills'] or
-                   color_data['strokes'] or color_data['gradients'])
+    has_anything = (color_data.get('spot_colors') or color_data.get('fills') or
+                   color_data.get('strokes') or color_data.get('gradients'))
 
-    if not has_anything and not color_data['warnings']:
+    if not has_anything and not color_data.get('warnings'):
         st.info("No color data extracted from this file.")
         return
 
+    # Document color mode badge
+    color_mode = color_data.get('color_mode')
+    if color_mode:
+        is_warning = 'RGB' in color_mode and 'Spot' not in color_mode
+        mode_color = '#c0392b' if is_warning else '#1a6b3a'
+        mode_icon = '⚠️' if is_warning else '✅'
+        badge = f'<div style="display:inline-block;padding:4px 12px;border-radius:12px;background:{mode_color};color:#fff;font-size:0.85rem;font-weight:bold;margin-bottom:8px;">{mode_icon} Document Color Mode: {color_mode}</div>'
+        st.markdown(badge, unsafe_allow_html=True)
+        if is_warning:
+            st.warning("⚠️ RGB color mode detected — colors may shift significantly in print. CMYK or Spot Color recommended.")
+
     # Spot colors (Pantone)
-    if color_data['spot_colors']:
+    if color_data.get('spot_colors'):
         st.markdown("**🎯 Spot Colors (Pantone/Named):**")
         for sc in color_data['spot_colors']:
             st.markdown(f"• 🔵 `{sc['label']}`")
 
     # Fill colors
-    if color_data['fills']:
-        st.markdown("**🪣 Fill Colors:**")
+    if color_data.get('fills'):
+        st.markdown("**🩣 Fill Colors:**")
         for fill in color_data['fills']:
             hex_val = fill.get('hex', '#cccccc')
             opacity = fill.get('opacity', 100)
@@ -943,7 +1035,7 @@ def render_color_results(color_data, file_ext):
             )
 
     # Stroke colors
-    if color_data['strokes']:
+    if color_data.get('strokes'):
         st.markdown("**✏️ Stroke Colors:**")
         for stroke in color_data['strokes']:
             hex_val = stroke.get('hex', '#cccccc')
@@ -956,84 +1048,15 @@ def render_color_results(color_data, file_ext):
             )
 
     # Gradients
-    if color_data['gradients']:
+    if color_data.get('gradients'):
         st.markdown("**🌈 Gradients:**")
         st.markdown(f"• {len(color_data['gradients'])} gradient(s) detected")
 
     # Warnings
-    if color_data['warnings']:
+    if color_data.get('warnings'):
         st.markdown("**⚠️ Production Warnings:**")
         for w in color_data['warnings']:
             st.warning(w)
-
-
-def save_as_pdf(image_path, pdf_path):
-    """Save preview as PDF"""
-    try:
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.utils import ImageReader
-        
-        img = Image.open(image_path)
-        c = canvas.Canvas(pdf_path, pagesize=letter)
-        page_width, page_height = letter
-        
-        # Calculate scaling
-        img_aspect = img.width / img.height
-        page_aspect = page_width / page_height
-        
-        if img_aspect > page_aspect:
-            scale = page_width / img.width * 0.9
-        else:
-            scale = page_height / img.height * 0.9
-        
-        new_width = img.width * scale
-        new_height = img.height * scale
-        
-        # Center on page
-        x = (page_width - new_width) / 2
-        y = (page_height - new_height) / 2
-        
-        # Draw image
-        c.drawImage(ImageReader(img), x, y, width=new_width, height=new_height)
-        c.save()
-        
-        return True
-    except Exception as e:
-        st.error(f"PDF creation failed: {str(e)}")
-        return False
-
-
-# ============================================================================
-# MAIN APP
-# ============================================================================
-
-st.markdown('<h1 class="main-header">🎨 ArtCheck</h1>', unsafe_allow_html=True)
-st.markdown('<p class="tagline">Vector & Embroidery File Preview Generator + AI Production Assistant</p>', unsafe_allow_html=True)
-
-# ============================================================================
-# SIDEBAR - ASK ARTBOT
-# ============================================================================
-
-with st.sidebar:
-    st.markdown("### 🤖 Ask ArtBot")
-    st.caption("Your AI production assistant - 20+ years of industry knowledge")
-    st.markdown("""
-<div style="background:#1a2535;border-radius:8px;padding:12px 14px;margin-bottom:10px;border-left:3px solid #667eea;">
-  <div style="font-size:1.3rem;font-weight:bold;color:#fff;margin-bottom:6px;">🤖 Got a file issue? Ask me.</div>
-  <div style="font-size:0.95rem;color:#a0b8d0;margin-bottom:8px;">📁 File fixes &nbsp;·&nbsp; 🎨 Color questions &nbsp;·&nbsp; 🧵 Decoration methods &nbsp;·&nbsp; ✅ Best practices</div>
-  <div style="font-size:0.9rem;color:#b0c4de;">Tell me what's going on and I'll tell you exactly how to tackle it and what to say to your customer.</div>
-</div>
-""", unsafe_allow_html=True)
-
-    if "artbot_history" not in st.session_state:
-        st.session_state.artbot_history = []
-    if "artbot_input_value" not in st.session_state:
-        st.session_state.artbot_input_value = ""
-    if "artbot_input_key" not in st.session_state:
-        st.session_state.artbot_input_key = 0
-    if "artbot_pending" not in st.session_state:
-        st.session_state.artbot_pending = None
 
     # Handle pending question (from example buttons or send)
     def _run_artbot(question):
