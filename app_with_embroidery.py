@@ -1420,7 +1420,7 @@ with st.sidebar:
             "How many colors for embroidery?",
             "What DPI for a 2 inch logo?",
             "Difference between vector and raster?",
-            "Can I use gradients on shirts?",
+            "Can gradients be embroidered?",
             "Why did my file get rejected?",
             "What's a stitch count?",
             "How do I handle a customer pushing back on art fees?",
