@@ -588,6 +588,353 @@ class PreviewGenerator:
         return None
 
 
+
+# ============================================================================
+# COLOR EXTRACTOR - Reads vector color data from source files
+# ============================================================================
+
+class ColorExtractor:
+    """Extracts fill and stroke colors from vector files before rasterization"""
+
+    def extract(self, input_file):
+        """
+        Main entry point. Returns dict with:
+          fills, strokes, spot_colors, gradients, warnings
+        """
+        ext = Path(input_file).suffix.lower()
+        results = {
+            'fills': [],
+            'strokes': [],
+            'spot_colors': [],
+            'gradients': [],
+            'warnings': [],
+            'color_space': None
+        }
+
+        if ext in ['.pdf', '.ai']:
+            return self._extract_from_pdf(input_file, results)
+        elif ext == '.eps':
+            return self._extract_from_eps(input_file, results)
+        elif ext == '.svg':
+            return self._extract_from_svg(input_file, results)
+        else:
+            results['warnings'].append("Color extraction not supported for this file type.")
+            return results
+
+    def _cmyk_to_hex(self, c, m, y, k):
+        """Convert CMYK (0-1) to hex for display swatch"""
+        r = int(255 * (1 - c) * (1 - k))
+        g = int(255 * (1 - m) * (1 - k))
+        b = int(255 * (1 - y) * (1 - k))
+        return f'#{r:02x}{g:02x}{b:02x}', (r, g, b)
+
+    def _rgb_to_hex(self, r, g, b):
+        ri, gi, bi = int(r*255), int(g*255), int(b*255)
+        return f'#{ri:02x}{gi:02x}{bi:02x}', (ri, gi, bi)
+
+    def _format_cmyk(self, c, m, y, k):
+        return f"C:{round(c*100)}% M:{round(m*100)}% Y:{round(y*100)}% K:{round(k*100)}%"
+
+    def _extract_from_pdf(self, input_file, results):
+        """Extract colors from PDF/AI using PyMuPDF"""
+        try:
+            import fitz
+            doc = fitz.open(input_file)
+            page = doc[0]
+
+            fills = {}
+            strokes = {}
+            spot_colors = {}
+            gradients = []
+
+            # Get color space info
+            try:
+                page_dict = page.get_text("dict")
+                results['color_space'] = 'CMYK/Mixed'
+            except:
+                pass
+
+            # Extract via drawings (paths with fill/stroke info)
+            drawings = page.get_drawings()
+            for drawing in drawings:
+                # Fill color
+                if drawing.get('fill') is not None:
+                    fill = drawing['fill']
+                    fill_cs = drawing.get('fill_opacity', 1.0)
+                    opacity = round(fill_cs * 100) if fill_cs <= 1.0 else 100
+
+                    if len(fill) == 4:  # CMYK
+                        c, m, y, k = fill
+                        label = self._format_cmyk(c, m, y, k)
+                        hex_val, rgb = self._cmyk_to_hex(c, m, y, k)
+                        key = label
+                        if key not in fills:
+                            fills[key] = {'label': label, 'hex': hex_val, 'rgb': rgb,
+                                         'space': 'CMYK', 'opacity': opacity,
+                                         'raw': (c, m, y, k)}
+                    elif len(fill) == 3:  # RGB
+                        r, g, b = fill
+                        label = f"R:{round(r*255)} G:{round(g*255)} B:{round(b*255)}"
+                        hex_val, rgb = self._rgb_to_hex(r, g, b)
+                        key = label
+                        if key not in fills:
+                            fills[key] = {'label': label, 'hex': hex_val, 'rgb': rgb,
+                                         'space': 'RGB', 'opacity': opacity}
+                    elif len(fill) == 1:  # Grayscale
+                        gray = fill[0]
+                        k_pct = round((1 - gray) * 100)
+                        label = f"K:{k_pct}% (Black {k_pct}%)"
+                        hex_val, rgb = self._cmyk_to_hex(0, 0, 0, 1-gray)
+                        key = label
+                        if key not in fills:
+                            fills[key] = {'label': label, 'hex': hex_val, 'rgb': rgb,
+                                         'space': 'Grayscale', 'opacity': opacity,
+                                         'raw': (0, 0, 0, 1-gray)}
+
+                # Stroke color
+                if drawing.get('color') is not None:
+                    stroke = drawing['color']
+                    width = round(drawing.get('width', 1), 2)
+
+                    if len(stroke) == 4:  # CMYK
+                        c, m, y, k = stroke
+                        label = self._format_cmyk(c, m, y, k)
+                        hex_val, rgb = self._cmyk_to_hex(c, m, y, k)
+                        key = f"{label}|{width}"
+                        if key not in strokes:
+                            strokes[key] = {'label': label, 'hex': hex_val, 'rgb': rgb,
+                                           'space': 'CMYK', 'width': width,
+                                           'raw': (c, m, y, k)}
+                    elif len(stroke) == 3:
+                        r, g, b = stroke
+                        label = f"R:{round(r*255)} G:{round(g*255)} B:{round(b*255)}"
+                        hex_val, rgb = self._rgb_to_hex(r, g, b)
+                        key = f"{label}|{width}"
+                        if key not in strokes:
+                            strokes[key] = {'label': label, 'hex': hex_val, 'rgb': rgb,
+                                           'space': 'RGB', 'width': width}
+                    elif len(stroke) == 1:
+                        gray = stroke[0]
+                        k_pct = round((1 - gray) * 100)
+                        label = f"K:{k_pct}% (Black {k_pct}%)"
+                        hex_val, rgb = self._cmyk_to_hex(0, 0, 0, 1-gray)
+                        key = f"{label}|{width}"
+                        if key not in strokes:
+                            strokes[key] = {'label': label, 'hex': hex_val, 'rgb': rgb,
+                                           'space': 'Grayscale', 'width': width}
+
+                # Detect gradients (shading)
+                if drawing.get('type') == 'sh':
+                    gradients.append({'type': 'gradient', 'label': 'Gradient detected'})
+
+            # Check for spot colors in page resources
+            try:
+                xref_list = page.get_contents()
+                content_stream = b""
+                for xref in xref_list:
+                    content_stream += doc.xref_stream(xref)
+                stream_text = content_stream.decode('latin-1', errors='ignore')
+
+                # Look for spot color definitions (CS /SpotName CS or SCN patterns)
+                import re
+                spot_patterns = re.findall(r'/([A-Za-z0-9\s\-\.]+(?:PANTONE|Pantone|PMS)[A-Za-z0-9\s\-\.]+)', stream_text)
+                for sp in spot_patterns:
+                    sp = sp.strip()
+                    if sp and sp not in spot_colors:
+                        spot_colors[sp] = {'label': sp, 'type': 'spot'}
+            except:
+                pass
+
+            doc.close()
+
+            results['fills'] = list(fills.values())
+            results['strokes'] = list(strokes.values())
+            results['spot_colors'] = list(spot_colors.values())
+            results['gradients'] = gradients
+
+            # Generate warnings
+            if gradients:
+                results['warnings'].append("⚠️ Gradient detected — not compatible with screen print or embroidery")
+            
+            hairlines = [s for s in results['strokes'] if s.get('width', 1) < 0.5]
+            if hairlines:
+                results['warnings'].append("⚠️ Hairline stroke detected — may not reproduce in embroidery or laser engraving")
+
+            total_colors = len(results['fills']) + len(results['spot_colors'])
+            if total_colors > 6:
+                results['warnings'].append(f"⚠️ {total_colors} colors detected — screen printing typically supports 4-6 colors max")
+
+            # Detect mixed color spaces
+            spaces = set(f.get('space') for f in results['fills'])
+            if len(spaces) > 1:
+                results['warnings'].append("⚠️ Mixed color spaces detected — verify consistency before production")
+
+            return results
+
+        except Exception as e:
+            results['warnings'].append(f"Color extraction error: {str(e)}")
+            return results
+
+    def _extract_from_eps(self, input_file, results):
+        """Extract colors from EPS by parsing PostScript"""
+        try:
+            with open(input_file, 'r', errors='ignore') as f:
+                content = f.read(50000)  # Read first 50KB
+
+            import re
+            fills = {}
+            strokes = {}
+            spot_colors = {}
+
+            # CMYK setcmykcolor / setcmykcolorspace
+            cmyk_patterns = re.findall(
+                r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+(?:setcmykcolor|k|K)', content)
+            for match in cmyk_patterns:
+                c, m, y, k = [float(x) for x in match]
+                label = self._format_cmyk(c, m, y, k)
+                hex_val, rgb = self._cmyk_to_hex(c, m, y, k)
+                fills[label] = {'label': label, 'hex': hex_val, 'rgb': rgb,
+                               'space': 'CMYK', 'opacity': 100}
+
+            # Grayscale setgray
+            gray_patterns = re.findall(r'([\d.]+)\s+setgray', content)
+            for g in gray_patterns:
+                gray = float(g)
+                k_pct = round((1 - gray) * 100)
+                label = f"K:{k_pct}% (Black {k_pct}%)"
+                hex_val, rgb = self._cmyk_to_hex(0, 0, 0, 1-gray)
+                fills[label] = {'label': label, 'hex': hex_val, 'rgb': rgb,
+                               'space': 'Grayscale', 'opacity': 100}
+
+            # Spot colors
+            spot_patterns = re.findall(r'\(([^)]*(?:PANTONE|Pantone|PMS)[^)]*)\)', content)
+            for sp in spot_patterns:
+                sp = sp.strip()
+                if sp:
+                    spot_colors[sp] = {'label': sp, 'type': 'spot'}
+
+            results['fills'] = list(fills.values())
+            results['strokes'] = list(strokes.values())
+            results['spot_colors'] = list(spot_colors.values())
+
+            if not results['fills'] and not results['spot_colors']:
+                results['warnings'].append("Could not extract color data from this EPS file.")
+            
+            total_colors = len(results['fills']) + len(results['spot_colors'])
+            if total_colors > 6:
+                results['warnings'].append(f"⚠️ {total_colors} colors detected — screen printing typically supports 4-6 colors max")
+
+            return results
+        except Exception as e:
+            results['warnings'].append(f"EPS color extraction error: {str(e)}")
+            return results
+
+    def _extract_from_svg(self, input_file, results):
+        """Extract colors from SVG by parsing XML"""
+        try:
+            import re
+            with open(input_file, 'r', errors='ignore') as f:
+                content = f.read()
+
+            fills = {}
+            strokes = {}
+
+            # Find all fill and stroke values
+            fill_matches = re.findall(r'fill[\s:="\']+([#][0-9a-fA-F]{3,6})', content)
+            stroke_matches = re.findall(r'stroke[\s:="\']+([#][0-9a-fA-F]{3,6})', content)
+            stroke_widths = re.findall(r'stroke-width[\s:="\']+([\d.]+)', content)
+
+            skip = {'none', 'transparent', 'inherit', 'currentColor', 'url'}
+
+            for val in fill_matches:
+                if val.lower() in skip or val.startswith('url'):
+                    continue
+                if val.startswith('#'):
+                    fills[val] = {'label': val.upper(), 'hex': val, 'space': 'RGB', 'opacity': 100}
+
+            avg_width = sum(float(w) for w in stroke_widths) / len(stroke_widths) if stroke_widths else 1.0
+            for val in stroke_matches:
+                if val.lower() in skip or val.startswith('url'):
+                    continue
+                if val.startswith('#'):
+                    strokes[val] = {'label': val.upper(), 'hex': val, 'space': 'RGB',
+                                   'width': avg_width, 'opacity': 100}
+
+            results['fills'] = list(fills.values())
+            results['strokes'] = list(strokes.values())
+
+            if not results['fills']:
+                results['warnings'].append("Could not extract color data from this SVG.")
+
+            total = len(results['fills'])
+            if total > 6:
+                results['warnings'].append(f"⚠️ {total} colors detected — screen printing typically supports 4-6 colors max")
+
+            return results
+        except Exception as e:
+            results['warnings'].append(f"SVG color extraction error: {str(e)}")
+            return results
+
+
+def render_color_results(color_data, file_ext):
+    """Render color extraction results in Streamlit"""
+    if not color_data:
+        return
+
+    st.markdown("---")
+    st.markdown("### 🎨 Color Analysis")
+
+    has_anything = (color_data['spot_colors'] or color_data['fills'] or
+                   color_data['strokes'] or color_data['gradients'])
+
+    if not has_anything and not color_data['warnings']:
+        st.info("No color data extracted from this file.")
+        return
+
+    # Spot colors (Pantone)
+    if color_data['spot_colors']:
+        st.markdown("**🎯 Spot Colors (Pantone/Named):**")
+        for sc in color_data['spot_colors']:
+            st.markdown(f"• 🔵 `{sc['label']}`")
+
+    # Fill colors
+    if color_data['fills']:
+        st.markdown("**🪣 Fill Colors:**")
+        for fill in color_data['fills']:
+            hex_val = fill.get('hex', '#cccccc')
+            opacity = fill.get('opacity', 100)
+            opacity_str = f" @ {opacity}% opacity" if opacity < 100 else ""
+            swatch = f'<span style="display:inline-block;width:16px;height:16px;background:{hex_val};border:1px solid #666;border-radius:3px;vertical-align:middle;margin-right:6px;"></span>'
+            st.markdown(
+                f'{swatch}<code>{fill["label"]}</code>{opacity_str} <span style="color:#888;font-size:0.85rem;">({fill.get("space","")})</span>',
+                unsafe_allow_html=True
+            )
+
+    # Stroke colors
+    if color_data['strokes']:
+        st.markdown("**✏️ Stroke Colors:**")
+        for stroke in color_data['strokes']:
+            hex_val = stroke.get('hex', '#cccccc')
+            width = stroke.get('width', 1)
+            hairline = " ⚠️ hairline" if width < 0.5 else ""
+            swatch = f'<span style="display:inline-block;width:16px;height:16px;background:{hex_val};border:1px solid #666;border-radius:3px;vertical-align:middle;margin-right:6px;"></span>'
+            st.markdown(
+                f'{swatch}<code>{stroke["label"]}</code> — {width}pt{hairline}',
+                unsafe_allow_html=True
+            )
+
+    # Gradients
+    if color_data['gradients']:
+        st.markdown("**🌈 Gradients:**")
+        st.markdown(f"• {len(color_data['gradients'])} gradient(s) detected")
+
+    # Warnings
+    if color_data['warnings']:
+        st.markdown("**⚠️ Production Warnings:**")
+        for w in color_data['warnings']:
+            st.warning(w)
+
+
 def save_as_pdf(image_path, pdf_path):
     """Save preview as PDF"""
     try:
@@ -803,7 +1150,14 @@ if uploaded_file:
         
             generator = PreviewGenerator()
             result = generator.generate_preview(tmp_path, bg_type)
-        
+
+            # Extract colors from vector source before cleanup
+            color_data = None
+            file_ext = Path(uploaded_file.name).suffix.lower()
+            if file_ext in [".pdf", ".ai", ".eps", ".svg"]:
+                extractor = ColorExtractor()
+                color_data = extractor.extract(tmp_path)
+
             # Cleanup temp input
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
@@ -845,6 +1199,10 @@ if uploaded_file:
                             mime="image/png",
                             use_container_width=True
                         )
+
+                # Color analysis below the two-column preview
+                if color_data:
+                    render_color_results(color_data, Path(uploaded_file.name).suffix.lower())
 
 # Footer
 st.markdown("---")
