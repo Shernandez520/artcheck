@@ -761,6 +761,32 @@ class ColorExtractor:
             except:
                 pass
 
+            # Fallback: raw byte scan for PANTONE names in case xref missed them
+            # AI files often embed Pantone names in compressed PostScript streams
+            if not spot_colors:
+                try:
+                    import re
+                    with open(input_file, 'rb') as f:
+                        raw = f.read()
+                    raw_text = raw.decode('latin-1', errors='ignore')
+                    # Match PANTONE names like 'PANTONE 293 U' or 'PANTONE 1235 C'
+                    raw_hits = re.findall(r'PANTONE\s+[\w.]+(?:\s+[\w.]+){0,3}', raw_text)
+                    seen = set()
+                    for hit in raw_hits:
+                        hit = hit.strip()
+                        # Clean up trailing junk
+                        hit = re.sub(r'\s+[a-z]{5,}.*$', '', hit).strip()
+                        if hit and hit not in seen and len(hit) < 40:
+                            seen.add(hit)
+                            spot_colors[hit] = {'label': hit, 'type': 'spot'}
+                except:
+                    pass
+
+            # Filter RGB fills that are clearly Pantone equivalents (white artboard)
+            WHITE = (255, 255, 255)
+            fills = {k: v for k, v in fills.items()
+                    if not (v.get('rgb') == WHITE and spot_colors)}
+
             results['fills'] = list(fills.values())
             results['strokes'] = list(strokes.values())
             results['spot_colors'] = list(spot_colors.values())
@@ -868,9 +894,9 @@ class ColorExtractor:
             return results
 
     def _detect_color_mode_pdf(self, input_file):
-        """Detect document color mode from PDF/AI xref objects"""
+        """Detect document color mode from PDF/AI xref objects + raw byte scan"""
         try:
-            import fitz
+            import fitz, re
             doc = fitz.open(input_file)
             has_cmyk = False
             has_rgb = False
@@ -888,6 +914,11 @@ class ColorExtractor:
                 if len(fill) == 4: has_cmyk = True
                 if len(fill) == 3: has_rgb = True
             doc.close()
+            # Also raw scan for PANTONE/CMYK keywords
+            with open(input_file, 'rb') as f:
+                raw = f.read(100000).decode('latin-1', errors='ignore')
+            if 'PANTONE' in raw or '/Separation' in raw: has_spot = True
+            if 'DeviceCMYK' in raw or 'setcmykcolor' in raw: has_cmyk = True
             if has_spot and has_cmyk: return 'Spot + CMYK'
             if has_spot: return 'Spot Color'
             if has_cmyk and has_rgb: return 'Mixed (CMYK + RGB)'
