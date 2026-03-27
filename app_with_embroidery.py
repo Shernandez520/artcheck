@@ -782,10 +782,10 @@ class ColorExtractor:
                 except:
                     pass
 
-            # Filter RGB fills that are clearly Pantone equivalents (white artboard)
-            WHITE = (255, 255, 255)
-            fills = {k: v for k, v in fills.items()
-                    if not (v.get('rgb') == WHITE and spot_colors)}
+            # If spot colors found, suppress RGB fills entirely — they are just
+            # fitz approximations of the spot colors and will cause confusion
+            if spot_colors:
+                fills = {}
 
             results['fills'] = list(fills.values())
             results['strokes'] = list(strokes.values())
@@ -918,7 +918,7 @@ class ColorExtractor:
             with open(input_file, 'rb') as f:
                 raw = f.read(100000).decode('latin-1', errors='ignore')
             if 'PANTONE' in raw or '/Separation' in raw: has_spot = True
-            if 'DeviceCMYK' in raw or 'setcmykcolor' in raw: has_cmyk = True
+            if 'DeviceCMYK' in raw or 'setcmykcolor' in raw or 'CMYK' in raw: has_cmyk = True
             if has_spot and has_cmyk: return 'Spot + CMYK'
             if has_spot: return 'Spot Color'
             if has_cmyk and has_rgb: return 'Mixed (CMYK + RGB)'
