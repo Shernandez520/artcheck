@@ -433,7 +433,7 @@ class PreviewGenerator:
         try:
             cmd = [
                 'gs', '-dNOPAUSE', '-dBATCH', '-dSAFER',
-                '-sDEVICE=png16m',
+                '-sDEVICE=pngalpha',
                 '-r300',
                 '-dEPSCrop',
                 f'-sOutputFile={output_file}',
@@ -445,7 +445,7 @@ class PreviewGenerator:
             # Try without EPSCrop if that failed
             cmd2 = [
                 'gs', '-dNOPAUSE', '-dBATCH', '-dSAFER',
-                '-sDEVICE=png16m',
+                '-sDEVICE=pngalpha',
                 '-r300',
                 f'-sOutputFile={output_file}',
                 input_file
