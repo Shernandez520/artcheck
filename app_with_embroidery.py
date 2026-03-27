@@ -1058,70 +1058,78 @@ class ColorExtractor:
         return vals in artifacts
 
     def _extract_from_eps(self, input_file, results):
-        """Extract colors from EPS by parsing PostScript"""
+        """Extract colors from EPS using GS->PDF->fitz pipeline for binary EPS support"""
+        import re, tempfile, os, subprocess
+
+        results['color_mode'] = self._detect_color_mode_eps(input_file)
+        tmp_pdf = None
         try:
-            with open(input_file, 'r', errors='ignore') as f:
-                content = f.read(50000)
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+                tmp_pdf = tmp.name
+            gs_result = subprocess.run([
+                'gs', '-dNOPAUSE', '-dBATCH', '-dSAFER',
+                '-sDEVICE=pdfwrite', f'-sOutputFile={tmp_pdf}', input_file
+            ], capture_output=True, timeout=30)
 
-            import re
-            fills = {}
-            strokes = {}
-            spot_colors = {}
+            if gs_result.returncode == 0 and os.path.exists(tmp_pdf):
+                import fitz
+                doc = fitz.open(tmp_pdf)
+                page = doc[0]
+                stream = page.read_contents().decode('latin-1', errors='ignore')
+                doc.close()
 
-            # Detect document color mode
-            results['color_mode'] = self._detect_color_mode_eps(input_file)
+                fills = {}
+                spot_colors = {}
 
-            # Spot colors first — if spot colors found, skip CMYK artifacts
-            spot_patterns = re.findall(r'\(([^)]*(?:PANTONE|Pantone|PMS)[^)]*)\)', content)
-            for sp in spot_patterns:
-                sp = sp.strip()
-                if sp:
-                    spot_colors[sp] = {'label': sp, 'type': 'spot'}
+                # Spot colors from original EPS text
+                try:
+                    with open(input_file, 'r', errors='ignore') as f:
+                        eps_text = f.read()
+                    for sp in re.findall(r'\(([^)]*(?:PANTONE|Pantone|PMS)[^)]*)\)', eps_text):
+                        sp = sp.strip()
+                        if sp: spot_colors[sp] = {'label': sp, 'type': 'spot'}
+                except: pass
 
-            has_spots = len(spot_colors) > 0
+                has_spots = bool(spot_colors)
 
-            # CMYK - only include if not registration artifacts
-            cmyk_patterns = re.findall(
-                r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+(?:setcmykcolor)', content)
-            for match in cmyk_patterns:
-                c, m, y, k = [float(x) for x in match]
-                # Skip registration artifacts and pure primaries
-                if self._is_registration_color(c, m, y, k):
-                    continue
-                # Skip K-only colors if we already have spot colors (likely tint of spot)
-                if has_spots and c == 0 and m == 0 and y == 0:
-                    continue
-                label = self._format_cmyk(c, m, y, k)
-                hex_val, rgb = self._cmyk_to_hex(c, m, y, k)
-                fills[label] = {'label': label, 'hex': hex_val, 'rgb': rgb,
-                               'space': 'CMYK', 'opacity': 100}
+                # Parse CMYK from decompressed stream (k and scn operators)
+                if not has_spots:
+                    for pat in [
+                        r'([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+k',
+                        r'([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+scn'
+                    ]:
+                        for match in re.findall(pat, stream):
+                            c, m, y, k = [float(x) for x in match]
+                            if self._is_registration_color(c, m, y, k): continue
+                            if c == 0 and m == 0 and y == 0:
+                                k_pct = round(k * 100)
+                                if k_pct == 0: continue
+                                label = f"K:{k_pct}% (Black {k_pct}%)"
+                            else:
+                                label = self._format_cmyk(c, m, y, k)
+                            if label not in fills:
+                                hex_val, rgb_val = self._cmyk_to_hex(c, m, y, k)
+                                fills[label] = {'label': label, 'hex': hex_val,
+                                               'rgb': rgb_val, 'space': 'CMYK', 'opacity': 100}
 
-            # Grayscale - only if no spots detected
-            if not has_spots:
-                gray_patterns = re.findall(r'([\d.]+)\s+setgray', content)
-                for g in gray_patterns:
-                    gray = float(g)
-                    if gray in [0.0, 1.0]:  # Skip pure black/white artifacts
-                        continue
-                    k_pct = round((1 - gray) * 100)
-                    label = f"K:{k_pct}% (Black {k_pct}%)"
-                    hex_val, rgb = self._cmyk_to_hex(0, 0, 0, 1-gray)
-                    fills[label] = {'label': label, 'hex': hex_val, 'rgb': rgb,
-                                   'space': 'Grayscale', 'opacity': 100}
+                results['fills'] = list(fills.values())
+                results['strokes'] = []
+                results['spot_colors'] = list(spot_colors.values())
 
-            results['spot_colors'] = list(spot_colors.values())
+                if not fills and not spot_colors:
+                    results['warnings'].append("Could not extract color data from this EPS file.")
+                total = len(fills) + len(spot_colors)
+                if total > 6:
+                    results['warnings'].append(f"⚠️ {total} colors detected — screen printing typically supports 4-6 colors max")
+                return results
 
-            if not results['fills'] and not results['spot_colors']:
-                results['warnings'].append("Could not extract color data from this EPS file.")
-
-            total_colors = len(results['fills']) + len(results['spot_colors'])
-            if total_colors > 6:
-                results['warnings'].append(f"⚠️ {total_colors} colors detected — screen printing typically supports 4-6 colors max")
-
-            return results
         except Exception as e:
             results['warnings'].append(f"EPS color extraction error: {str(e)}")
-            return results
+        finally:
+            if tmp_pdf and os.path.exists(tmp_pdf):
+                os.unlink(tmp_pdf)
+
+        return results
 
     def _detect_color_mode_pdf(self, input_file):
         """Detect document color mode from PDF/AI xref objects + full raw byte scan"""
