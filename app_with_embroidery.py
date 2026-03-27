@@ -1012,8 +1012,18 @@ class ColorExtractor:
             # - If spot colors found: RGB are fitz approximations, useless
             # - If doc is CMYK: RGB are fitz conversions, misleading
             # RGB fills only shown if doc is genuinely RGB with no spot/CMYK data
+            # Override color mode if content stream analysis found CMYK data
+            # DeviceRGB can appear in PDF xrefs from rendering artifacts — trust fill data more
+            has_cmyk_fills = any(v.get('space') == 'CMYK' for v in fills.values())
+            if has_cmyk_fills and not spot_colors:
+                results['color_mode'] = 'CMYK'
+            elif spot_colors and has_cmyk_fills:
+                results['color_mode'] = 'Spot + CMYK'
+            elif spot_colors:
+                results['color_mode'] = 'Spot Color'
+
             color_mode = results.get('color_mode', 'Unknown')
-            suppress_rgb = spot_colors or ('CMYK' in color_mode and 'RGB' not in color_mode) or any(v.get('space') == 'CMYK' for v in fills.values())
+            suppress_rgb = spot_colors or ('CMYK' in color_mode and 'RGB' not in color_mode) or has_cmyk_fills
             if suppress_rgb:
                 fills = {k: v for k, v in fills.items() if v.get('space') != 'RGB'}
                 strokes = {k: v for k, v in strokes.items() if v.get('space') != 'RGB'}
