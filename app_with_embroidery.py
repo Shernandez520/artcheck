@@ -593,6 +593,153 @@ class PreviewGenerator:
 # COLOR EXTRACTOR - Reads vector color data from source files
 # ============================================================================
 
+
+# ============================================================================
+# RASTER ANALYZER - Handles PNG/JPG/GIF/TIFF/BMP/WEBP uploads
+# ============================================================================
+
+class RasterAnalyzer:
+    """Analyzes raster image files for production suitability"""
+
+    RASTER_FORMATS = ['.png', '.jpg', '.jpeg', '.gif', '.tiff', '.tif', '.bmp', '.webp']
+
+    def is_raster(self, filename):
+        return Path(filename).suffix.lower() in self.RASTER_FORMATS
+
+    def analyze(self, input_file):
+        """
+        Returns dict with:
+          width_px, height_px, dpi, color_mode,
+          print_sizes, verdict, warnings, recommendations
+        """
+        results = {
+            'width_px': 0, 'height_px': 0,
+            'dpi': 72, 'color_mode': 'Unknown',
+            'print_sizes': {}, 'verdict': 'unknown',
+            'warnings': [], 'recommendations': []
+        }
+        try:
+            img = Image.open(input_file)
+            results['width_px'] = img.width
+            results['height_px'] = img.height
+            results['color_mode'] = img.mode
+
+            # Get DPI from image metadata
+            dpi_info = img.info.get('dpi') or img.info.get('jfif_density')
+            if dpi_info and isinstance(dpi_info, tuple):
+                dpi = round(max(dpi_info[0], dpi_info[1]))
+            elif dpi_info and isinstance(dpi_info, (int, float)):
+                dpi = round(dpi_info)
+            else:
+                dpi = 72  # Default assumption for web images
+
+            # Clamp to realistic range
+            if dpi < 1 or dpi > 2400:
+                dpi = 72
+            results['dpi'] = dpi
+
+            # Calculate usable print sizes
+            w_at_300 = round(img.width / 300, 2)
+            h_at_300 = round(img.height / 300, 2)
+            w_at_150 = round(img.width / 150, 2)
+            h_at_150 = round(img.height / 150, 2)
+            w_at_200 = round(img.width / 200, 2)
+            h_at_200 = round(img.height / 200, 2)
+
+            results['print_sizes'] = {
+                '300dpi': (w_at_300, h_at_300),   # Screen print, embroidery digitizing
+                '200dpi': (w_at_200, h_at_200),   # Acceptable quality
+                '150dpi': (w_at_150, h_at_150),   # DTG minimum
+            }
+
+            # Determine production verdict
+            max_dim = max(img.width, img.height)
+            if dpi >= 300 or (img.width >= 1200 and img.height >= 1200):
+                results['verdict'] = 'good'
+            elif dpi >= 150 or max_dim >= 800:
+                results['verdict'] = 'marginal'
+            else:
+                results['verdict'] = 'poor'
+
+            # Generate warnings
+            if dpi <= 72:
+                results['warnings'].append("⚠️ 72 DPI detected — this file was likely saved from a website or screen capture")
+            if results['verdict'] == 'poor':
+                results['warnings'].append("❌ Resolution too low for most decoration methods — will print blurry")
+            elif results['verdict'] == 'marginal':
+                results['warnings'].append("⚠️ Marginal resolution — may be acceptable for DTG or small print sizes only")
+
+            if img.mode == 'RGB':
+                results['warnings'].append("⚠️ RGB color mode — will need conversion to CMYK for most print methods")
+            elif img.mode == 'RGBA':
+                results['warnings'].append("ℹ️ Image has transparency (alpha channel)")
+            elif img.mode == 'P':
+                results['warnings'].append("⚠️ Indexed/palette color mode — may have limited colors")
+
+            # Recommendations
+            if results['verdict'] in ('poor', 'marginal'):
+                results['recommendations'].append("Ask the customer for the original vector file (.ai, .eps, .pdf) from their designer")
+                results['recommendations'].append("If no vector exists, ask for the highest-resolution version available (original camera photo, original design file)")
+                if dpi <= 72:
+                    results['recommendations'].append("Do NOT use this file — it was saved from a website at screen resolution")
+            if img.mode == 'RGB':
+                results['recommendations'].append("Convert to CMYK in Illustrator or Photoshop before sending to production")
+
+        except Exception as e:
+            results['warnings'].append(f"Could not analyze image: {str(e)}")
+
+        return results
+
+
+def render_raster_results(analysis, filename):
+    """Display raster analysis results"""
+    verdict = analysis.get('verdict', 'unknown')
+    dpi = analysis.get('dpi', 72)
+    w, h = analysis.get('width_px', 0), analysis.get('height_px', 0)
+    sizes = analysis.get('print_sizes', {})
+
+    # Verdict banner
+    if verdict == 'good':
+        st.markdown('''<div style="padding:12px;border-radius:8px;background:#1a6b3a;color:#fff;font-size:1rem;font-weight:bold;margin-bottom:12px;">✅ Production Ready — Resolution is sufficient</div>''', unsafe_allow_html=True)
+    elif verdict == 'marginal':
+        st.markdown('''<div style="padding:12px;border-radius:8px;background:#7d5a00;color:#fff;font-size:1rem;font-weight:bold;margin-bottom:12px;">⚠️ Marginal Quality — Use with caution</div>''', unsafe_allow_html=True)
+    else:
+        st.markdown('''<div style="padding:12px;border-radius:8px;background:#8b1a1a;color:#fff;font-size:1rem;font-weight:bold;margin-bottom:12px;">❌ Not Suitable for Production — Resolution too low</div>''', unsafe_allow_html=True)
+
+    # Image stats
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Dimensions", f"{w} × {h} px")
+    with col2:
+        st.metric("DPI (metadata)", f"{dpi} DPI")
+    with col3:
+        st.metric("Color Mode", analysis.get('color_mode', 'Unknown'))
+
+    # Print size table
+    if sizes:
+        st.markdown("**📐 Usable Print Sizes:**")
+        size_300 = sizes.get('300dpi', (0, 0))
+        size_200 = sizes.get('200dpi', (0, 0))
+        size_150 = sizes.get('150dpi', (0, 0))
+        st.markdown(f"""
+| Quality | DPI | Max Print Size | Suitable For |
+|---------|-----|----------------|-------------|
+| High | 300 | {size_300[0]}" × {size_300[1]}" | Screen print, laser, pad print |
+| Acceptable | 200 | {size_200[0]}" × {size_200[1]}" | Most methods at smaller sizes |
+| Minimum | 150 | {size_150[0]}" × {size_150[1]}" | DTG only |
+""")
+
+    # Warnings
+    if analysis.get('warnings'):
+        for w in analysis['warnings']:
+            st.warning(w)
+
+    # Recommendations
+    if analysis.get('recommendations'):
+        st.markdown("**💡 What to do:**")
+        for r in analysis['recommendations']:
+            st.markdown(f"• {r}")
+
 class ColorExtractor:
     """Extracts fill and stroke colors from vector files before rasterization"""
 
@@ -1217,12 +1364,14 @@ st.markdown("## 📁 Upload Your File")
 vector_formats = ".ai, .eps, .pdf, .svg, .cdr, .xcf"
 embroidery_formats = ".dst, .pes, .exp, .jef, .vp3, .xxx, .u01"
 
-st.info(f"**Supported:** Vector files ({vector_formats}) | Embroidery files ({embroidery_formats})")
+raster_formats = ".png, .jpg, .gif, .tiff, .bmp, .webp"
+st.info(f"**Supported:** Vector files ({vector_formats}) | Embroidery files ({embroidery_formats}) | Raster images ({raster_formats})")
 
 uploaded_file = st.file_uploader(
     "🎨 Drag and drop your file here or click to browse",
-    type=['ai', 'eps', 'pdf', 'svg', 'cdr', 'xcf', 'indd', 'dst', 'pes', 'exp', 'jef', 'vp3', 'xxx', 'u01'],
-    help="Supports vector and embroidery files up to 200MB"
+    type=['ai', 'eps', 'pdf', 'svg', 'cdr', 'xcf', 'indd', 'dst', 'pes', 'exp', 'jef', 'vp3', 'xxx', 'u01',
+          'png', 'jpg', 'jpeg', 'gif', 'tiff', 'tif', 'bmp', 'webp'],
+    help="Supports vector, embroidery, and raster image files up to 200MB"
 )
 
 if uploaded_file:
@@ -1242,6 +1391,25 @@ if uploaded_file:
         st.stop()
 
     st.success(f"✓ Uploaded: **{uploaded_file.name}** ({uploaded_file.size / 1024 / 1024:.2f} MB)")
+
+    # Handle raster images separately
+    raster_analyzer = RasterAnalyzer()
+    if raster_analyzer.is_raster(uploaded_file.name):
+        st.info("📷 Raster image detected — analyzing for production suitability...")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp_file:
+            tmp_file.write(uploaded_file.getvalue())
+            tmp_path = tmp_file.name
+
+        # Show the image as preview
+        st.image(uploaded_file, caption="Your Image", use_container_width=True)
+
+        # Run analysis
+        analysis = raster_analyzer.analyze(tmp_path)
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+        render_raster_results(analysis, uploaded_file.name)
+        st.stop()
 
     # Background options — use session state so selection survives the Generate button click
     if 'bg_type' not in st.session_state:
