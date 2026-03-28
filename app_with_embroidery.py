@@ -1417,11 +1417,11 @@ with st.sidebar:
         st.caption("💡 Try one of these:")
         examples = [
             "What file format for screen printing?",
-            "How many colors for embroidery?",
+            "What does 'fonts not outlined' mean?",
             "What DPI for a 2 inch logo?",
             "Difference between vector and raster?",
             "Can gradients be embroidered?",
-            "Why did my file get rejected?",
+            "Can I use customer website graphics for production?",
             "What's a stitch count?",
             "How do I handle a customer pushing back on art fees?",
         ]
