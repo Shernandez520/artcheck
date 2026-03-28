@@ -1504,7 +1504,6 @@ with st.sidebar:
     if not st.session_state.artbot_history:
         st.caption("💡 Try one of these:")
         examples = [
-            "What file format for screen printing?",
             "What does 'fonts not outlined' mean?",
             "What DPI for a 2 inch logo?",
             "Difference between vector and raster?",
