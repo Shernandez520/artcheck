@@ -1422,7 +1422,6 @@ with st.sidebar:
             "Difference between vector and raster?",
             "Can gradients be embroidered?",
             "Can I use customer website graphics for production?",
-            "What's a stitch count?",
             "How do I handle a customer pushing back on art fees?",
         ]
         for ex in examples:
