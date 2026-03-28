@@ -792,7 +792,10 @@ def render_raster_results(analysis, filename):
     # Image stats
     col1, col2, col3 = st.columns(3)
     with col1:
+        w_in = round(w / dpi, 2) if dpi > 0 else "?"
+        h_in = round(h / dpi, 2) if dpi > 0 else "?"
         st.metric("Dimensions", f"{w} × {h} px")
+        st.caption(f'@ metadata DPI: {w_in}" x {h_in}"')
     with col2:
         # Show actual inches at the embedded DPI, or at 300dpi if DPI is unreliable
         display_dpi = dpi if dpi >= 150 else 300
