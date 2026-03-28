@@ -1622,5 +1622,6 @@ st.markdown("""
 <div style='text-align: center; color: #666;'>
     <p>Built with ❤️ for promotional products professionals</p>
     <p>🤖 AI-powered answers • 📁 Instant previews • ⏱️ Save 15+ hours/week</p>
+    <p style="font-size:0.78rem;color:#555;margin-top:8px;">🔒 <strong>Privacy:</strong> ArtCheck does not store your uploaded files. Files are processed temporarily and discarded immediately. ArtBot conversations are powered by the Anthropic API.</p>
 </div>
 """, unsafe_allow_html=True)
