@@ -3,3 +3,4 @@ libpango1.0-dev
 libpangocairo-1.0-0
 poppler-utils
 ghostscript
+libcdr-tools
