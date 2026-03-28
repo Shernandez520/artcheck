@@ -270,6 +270,29 @@ class EmbroideryConverter:
     def is_embroidery_file(self, filename):
         """Check if file is an embroidery format"""
         return Path(filename).suffix.lower() in self.EMBROIDERY_FORMATS
+
+    def get_thread_colors(self, pattern):
+        """
+        Extract thread colors from embroidery pattern.
+        PES files carry real color data; DST and others may return black defaults.
+        Returns (colors_list, unique_count)
+        """
+        colors = []
+        seen = set()
+        for thread in pattern.threadlist:
+            argb = thread.color
+            r = (argb >> 16) & 0xFF
+            g = (argb >> 8) & 0xFF
+            b = argb & 0xFF
+            hex_color = f"#{r:02X}{g:02X}{b:02X}"
+            colors.append({
+                "hex": hex_color,
+                "rgb": (r, g, b),
+                "is_duplicate": hex_color in seen,
+            })
+            seen.add(hex_color)
+        unique_count = len(set(c["hex"] for c in colors))
+        return colors, unique_count
     
     def convert_to_png(self, input_file, output_file, width=1200, height=800):
         """Convert embroidery file to PNG visualization"""
@@ -337,15 +360,21 @@ class EmbroideryConverter:
             # Save image
             img.save(output_file, 'PNG')
             
-            # Get pattern info
-            stitch_count = len(pattern.stitches)
+            # Get pattern info — count only real stitches, not trims/jumps
+            stitch_count = sum(
+                1 for s in pattern.stitches
+                if len(s) > 2 and s[2] == self.pyembroidery.STITCH
+            )
             thread_changes = sum(1 for s in pattern.stitches if len(s) > 2 and (s[2] & self.pyembroidery.COLOR_CHANGE))
             
+            thread_colors, unique_color_count = self.get_thread_colors(pattern)
             return True, {
                 'stitch_count': stitch_count,
                 'thread_changes': thread_changes,
                 'width_mm': round(pattern_width / 10, 2),  # Convert to mm
-                'height_mm': round(pattern_height / 10, 2)
+                'height_mm': round(pattern_height / 10, 2),
+                'thread_colors': thread_colors,
+                'unique_color_count': unique_color_count,
             }
             
         except Exception as e:
@@ -505,6 +534,44 @@ class PreviewGenerator:
         except Exception as e:
             st.warning(f"Background application failed: {str(e)}")
 
+    def _convert_cdr(self, input_file, output_file):
+        """Convert CorelDRAW .cdr to PNG via cdr2xhtml (SVG) -> CairoSVG pipeline"""
+        try:
+            # cdr2xhtml outputs SVG to stdout
+            result = subprocess.run(
+                ["cdr2xhtml", input_file],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                st.warning("cdr2xhtml could not parse this CorelDRAW file.")
+                return False
+
+            # Write SVG to temp file, then convert with CairoSVG
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.svg', mode='w') as svg_tmp:
+                svg_tmp.write(result.stdout)
+                svg_tmp_path = svg_tmp.name
+
+            try:
+                success = self._convert_svg_with_cairosvg(svg_tmp_path, output_file)
+                if not success and self.has_fitz:
+                    success = self._convert_with_fitz(svg_tmp_path, output_file)
+                return success
+            finally:
+                if os.path.exists(svg_tmp_path):
+                    os.unlink(svg_tmp_path)
+
+        except FileNotFoundError:
+            st.warning("cdr2xhtml not found. Add `libcdr-tools` to packages.txt.")
+            return False
+        except subprocess.TimeoutExpired:
+            st.warning("CorelDRAW conversion timed out.")
+            return False
+        except Exception as e:
+            st.warning(f"CDR conversion failed: {str(e)}")
+            return False
+
     def _detect_file_type_label(self, input_file, ext):
         """Return accurate file type label"""
         if ext == '.svg' and self._svg_has_embedded_raster(input_file):
@@ -573,6 +640,9 @@ class PreviewGenerator:
             if not success and self.has_fitz:
                 success = self._convert_with_fitz(input_file, output_file)
 
+        elif ext == '.cdr':
+            success = self._convert_cdr(input_file, output_file)
+
         if success and os.path.exists(output_file):
             self._apply_background(output_file, bg_type)
             img = Image.open(output_file)
@@ -584,7 +654,7 @@ class PreviewGenerator:
                 'file_type': file_type_label
             }
 
-        st.error("Could not convert file. Please try exporting as PDF or SVG from your design application.")
+        st.error("Could not convert file. For CorelDRAW (.cdr) files, please export as PDF or SVG from CorelDRAW and re-upload. For other formats, try exporting as PDF or SVG from your design application.")
         return None
 
 
@@ -711,7 +781,12 @@ def render_raster_results(analysis, filename):
     with col1:
         st.metric("Dimensions", f"{w} × {h} px")
     with col2:
-        st.metric("DPI (metadata)", f"{dpi} DPI")
+        # Show actual inches at the embedded DPI, or at 300dpi if DPI is unreliable
+        display_dpi = dpi if dpi >= 150 else 300
+        w_in = round(w / display_dpi, 2)
+        h_in = round(h / display_dpi, 2)
+        dpi_label = f"Size @ {display_dpi}dpi" + (" (assumed)" if dpi < 150 else "")
+        st.metric(dpi_label, f"{w_in}\" × {h_in}\"")
     with col3:
         st.metric("Color Mode", analysis.get('color_mode', 'Unknown'))
 
@@ -1598,6 +1673,24 @@ if uploaded_file:
                         st.metric("Stitch Count", f"{emb['stitch_count']:,}")
                         st.metric("Thread Changes", emb['thread_changes'])
                         st.metric("Size", f"{emb['width_mm']}mm × {emb['height_mm']}mm")
+
+                        # Thread color swatches (PES and other formats with color data)
+                        thread_colors = emb.get('thread_colors', [])
+                        unique_count = emb.get('unique_color_count', 0)
+                        if thread_colors and unique_count > 0:
+                            st.markdown(f"**Thread Colors** ({unique_count} unique)")
+                            swatch_html = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">'
+                            for c in thread_colors:
+                                border = "2px solid #888" if c["is_duplicate"] else "2px solid #444"
+                                swatch_html += (
+                                    f'<div style="text-align:center;">'
+                                    f'<div style="background:{c["hex"]};width:36px;height:36px;'
+                                    f'border-radius:4px;border:{border};"></div>'
+                                    f'<div style="font-size:0.65rem;color:#aaa;margin-top:2px;">{c["hex"]}</div>'
+                                    f'</div>'
+                                )
+                            swatch_html += '</div>'
+                            st.markdown(swatch_html, unsafe_allow_html=True)
                 
                     st.markdown("---")
                 
