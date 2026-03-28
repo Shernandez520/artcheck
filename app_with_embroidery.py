@@ -1623,6 +1623,13 @@ st.markdown("""
     <p>Built with ❤️ for promotional products professionals</p>
     <p>🤖 AI-powered answers • 📁 Instant previews • ⏱️ Save 15+ hours/week</p>
     <p style="font-size:0.78rem;color:#555;margin-top:8px;">🔒 <strong>Privacy:</strong> ArtCheck does not store your uploaded files. Files are processed temporarily and discarded immediately. ArtBot conversations are powered by the Anthropic API.</p>
-    <p style="margin-top:10px;"><a href="https://ko-fi.com/artchecktips" target="_blank" style="background:#FF5E5B;color:#fff;padding:6px 16px;border-radius:20px;text-decoration:none;font-size:0.85rem;font-weight:bold;">☕ Buy me a coffee</a>&nbsp;&nbsp;<span style="font-size:0.78rem;color:#666;">ArtCheck is free — support keeps it that way.</span></p>
+    <p style="margin-top:10px;">
+        <a href="https://ko-fi.com/artchecktips" target="_blank" style="background:#FF5E5B;color:#fff;padding:6px 16px;border-radius:20px;text-decoration:none;font-size:0.85rem;font-weight:bold;">☕ Buy me a coffee</a>
+        &nbsp;&nbsp;
+        <a href="mailto:artchecksupport@gmail.com" style="color:#888;font-size:0.82rem;text-decoration:none;">📧 Contact & Contract Work</a>
+        &nbsp;&nbsp;
+        <a href="https://github.com/Shernandez520/artcheck/issues" target="_blank" style="color:#888;font-size:0.82rem;text-decoration:none;">🐛 Report a Bug</a>
+    </p>
+    <p style="font-size:0.75rem;color:#555;margin-top:4px;">ArtCheck is free — support keeps it that way.</p>
 </div>
 """, unsafe_allow_html=True)
