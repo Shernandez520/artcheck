@@ -15,9 +15,8 @@ import tempfile
 import json
 
 def inject_ga():
-    import streamlit.components.v1 as components
     GA_ID = "G-E1711T2D9R"
-    components.html(f"""
+    st.markdown(f"""
         <script async src="https://www.googletagmanager.com/gtag/js?id={GA_ID}"></script>
         <script>
             window.dataLayer = window.dataLayer || [];
@@ -25,7 +24,7 @@ def inject_ga():
             gtag('js', new Date());
             gtag('config', '{GA_ID}');
         </script>
-    """, height=0)
+    """, unsafe_allow_html=True)
 
 st.set_page_config(
     page_title="ArtCheck - Preview Generator",
