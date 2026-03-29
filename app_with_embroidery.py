@@ -14,6 +14,7 @@ import shutil
 import tempfile
 import json
 
+def inject_ga():
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-E1711T2D9R"></script>
 <script>
