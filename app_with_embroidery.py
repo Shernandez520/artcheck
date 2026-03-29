@@ -93,6 +93,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+inject_ga()
 
 # ============================================================================
 # ARTBOT INTEGRATION
