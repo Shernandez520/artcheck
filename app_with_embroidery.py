@@ -1760,7 +1760,7 @@ function reset(){scale=fitScale;tx=0;ty=0;apply();}
                     w_in = round(result["width"] / 300, 2)
                     h_in = round(result["height"] / 300, 2)
                     st.metric("Dimensions (px)", f"{result["width"]} × {result["height"]}")
-                    st.metric("Size @ 300dpi", f"{w_in}in × {h_in}in")
+                    st.metric("Size (inches)", f'{w_in}" x {h_in}"')
                     st.metric("File Size", f"{result['size_kb']} KB")
                     st.metric("File Type", result['file_type'].title())
                 
