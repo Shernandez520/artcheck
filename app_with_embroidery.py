@@ -1673,30 +1673,74 @@ if uploaded_file:
                 with col1:
                     import base64, streamlit.components.v1 as _components
                     _b64 = base64.b64encode(open(result["image"], "rb").read()).decode()
-                    _pz = (
-                        "<!DOCTYPE html><html><head><style>"
-                        "body{margin:0;background:#111;overflow:hidden;}"
-                        "#c{width:100%;height:480px;overflow:hidden;position:relative;"
-                        "display:flex;align-items:center;justify-content:center;"
-                        "background:#111;border-radius:8px;cursor:grab;}"
-                        "#c:active{cursor:grabbing;}"
-                        "#w{display:inline-block;}"
-                        "#i{display:block;max-width:100%;max-height:460px;user-select:none;border-radius:4px;}"
-                        "#r{position:absolute;top:8px;right:8px;background:#222;color:#aaa;"
-                        "border:1px solid #444;border-radius:4px;padding:3px 10px;font-size:0.75rem;"
-                        "cursor:pointer;font-family:sans-serif;}"
-                        "#r:hover{background:#333;color:#fff;}"
-                        '</style></head><body><div id="c"><div id="w">'
-                        f'<img id="i" src="data:image/png;base64,{_b64}" draggable="false"/>'
-                        '</div><button id="r" onclick="rv()">Reset</button></div>'
-                        '<script src="https://cdnjs.cloudflare.com/ajax/libs/panzoom/9.4.3/panzoom.min.js"></script>'
-                        '<script>var ins=panzoom(document.getElementById("w"),'
-                        '{maxZoom:8,minZoom:0.3,bounds:false,smoothScroll:true});'
-                        'function rv(){ins.moveTo(0,0);ins.zoomAbs(0,0,1);}'
-                        '</script></body></html>'
-                    )
-                    _components.html(_pz, height=490, scrolling=False)
-                    st.caption("Your Preview — scroll to zoom, drag to pan")
+                    _pz = """<!DOCTYPE html>
+<html><head><style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#111;overflow:hidden;width:100%;height:490px;}
+#viewport{width:100%;height:490px;overflow:hidden;position:relative;
+  background:#111;border-radius:8px;cursor:grab;}
+#viewport.grabbing{cursor:grabbing;}
+#img{position:absolute;top:50%;left:50%;transform-origin:center center;
+  max-width:none;display:block;user-select:none;pointer-events:none;}
+#controls{position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:10;}
+.ctrl-btn{background:#222;color:#aaa;border:1px solid #444;border-radius:4px;
+  padding:4px 10px;font-size:0.75rem;cursor:pointer;font-family:sans-serif;}
+.ctrl-btn:hover{background:#333;color:#fff;}
+</style></head><body>
+<div id="viewport">
+  <img id="img" src="data:image/png;base64,IMG_B64" draggable="false"/>
+  <div id="controls">
+    <button class="ctrl-btn" onclick="zoomIn()">+</button>
+    <button class="ctrl-btn" onclick="zoomOut()">-</button>
+    <button class="ctrl-btn" onclick="reset()">Reset</button>
+  </div>
+</div>
+<script>
+var vp=document.getElementById('viewport');
+var img=document.getElementById('img');
+var scale=1,tx=0,ty=0,dragging=false,sx=0,sy=0,stx=0,sty=0;
+
+function apply(){
+  img.style.transform='translate(calc(-50% + '+tx+'px), calc(-50% + '+ty+'px)) scale('+scale+')';
+}
+apply();
+
+vp.addEventListener('wheel',function(e){
+  e.preventDefault();
+  var delta=e.deltaY<0?1.1:0.9;
+  scale=Math.min(8,Math.max(0.2,scale*delta));
+  apply();
+},{passive:false});
+
+vp.addEventListener('mousedown',function(e){
+  dragging=true;sx=e.clientX;sy=e.clientY;stx=tx;sty=ty;
+  vp.classList.add('grabbing');
+});
+window.addEventListener('mousemove',function(e){
+  if(!dragging)return;
+  tx=stx+(e.clientX-sx);ty=sty+(e.clientY-sy);apply();
+});
+window.addEventListener('mouseup',function(){dragging=false;vp.classList.remove('grabbing');});
+
+vp.addEventListener('touchstart',function(e){
+  if(e.touches.length===1){
+    dragging=true;sx=e.touches[0].clientX;sy=e.touches[0].clientY;stx=tx;sty=ty;
+  }
+},{passive:true});
+vp.addEventListener('touchmove',function(e){
+  if(dragging&&e.touches.length===1){
+    tx=stx+(e.touches[0].clientX-sx);ty=sty+(e.touches[0].clientY-sy);apply();
+  }
+},{passive:true});
+vp.addEventListener('touchend',function(){dragging=false;});
+
+function zoomIn(){scale=Math.min(8,scale*1.25);apply();}
+function zoomOut(){scale=Math.max(0.2,scale/1.25);apply();}
+function reset(){scale=1;tx=0;ty=0;apply();}
+</script>
+</body></html>""".replace("IMG_B64", _b64)
+                    _components.html(_pz, height=495, scrolling=False)
+                    st.caption("Your Preview")
             
                 with col2:
                     st.markdown("### Preview Info")
