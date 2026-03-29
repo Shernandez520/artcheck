@@ -14,6 +14,16 @@ import shutil
 import tempfile
 import json
 
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-E1711T2D9R"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-E1711T2D9R');
+</script>
+
 st.set_page_config(
     page_title="ArtCheck - Preview Generator",
     page_icon="🎨",
