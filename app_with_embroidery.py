@@ -15,15 +15,17 @@ import tempfile
 import json
 
 def inject_ga():
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-E1711T2D9R"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'G-E1711T2D9R');
-</script>
+    import streamlit.components.v1 as components
+    GA_ID = "G-E1711T2D9R"
+    components.html(f"""
+        <script async src="https://www.googletagmanager.com/gtag/js?id={GA_ID}"></script>
+        <script>
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){{dataLayer.push(arguments);}}
+            gtag('js', new Date());
+            gtag('config', '{GA_ID}');
+        </script>
+    """, height=0)
 
 st.set_page_config(
     page_title="ArtCheck - Preview Generator",
