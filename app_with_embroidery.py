@@ -1698,11 +1698,23 @@ body{background:#111;overflow:hidden;width:100%;height:490px;}
 <script>
 var vp=document.getElementById('viewport');
 var img=document.getElementById('img');
-var scale=1,tx=0,ty=0,dragging=false,sx=0,sy=0,stx=0,sty=0;
+var tx=0,ty=0,dragging=false,sx=0,sy=0,stx=0,sty=0;
+
+// Calculate initial scale to fit image inside container
+var vw=vp.offsetWidth||760, vh=vp.offsetHeight||490;
+var iw=img.naturalWidth||img.width||760, ih=img.naturalHeight||img.height||490;
+var scale=Math.min(vw/iw, vh/ih, 1);
 
 function apply(){
   img.style.transform='translate(calc(-50% + '+tx+'px), calc(-50% + '+ty+'px)) scale('+scale+')';
 }
+
+// Wait for image to load before calculating fit
+img.onload=function(){
+  iw=img.naturalWidth; ih=img.naturalHeight;
+  scale=Math.min(vw/iw, vh/ih, 1);
+  apply();
+};
 apply();
 
 vp.addEventListener('wheel',function(e){
@@ -1734,9 +1746,10 @@ vp.addEventListener('touchmove',function(e){
 },{passive:true});
 vp.addEventListener('touchend',function(){dragging=false;});
 
+var fitScale=scale;
 function zoomIn(){scale=Math.min(8,scale*1.25);apply();}
-function zoomOut(){scale=Math.max(0.2,scale/1.25);apply();}
-function reset(){scale=1;tx=0;ty=0;apply();}
+function zoomOut(){scale=Math.max(0.1,scale/1.25);apply();}
+function reset(){scale=fitScale;tx=0;ty=0;apply();}
 </script>
 </body></html>""".replace("IMG_B64", _b64)
                     _components.html(_pz, height=495, scrolling=False)
