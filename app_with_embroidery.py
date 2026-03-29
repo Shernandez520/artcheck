@@ -1671,7 +1671,43 @@ if uploaded_file:
                 col1, col2 = st.columns([2, 1])
             
                 with col1:
-                    st.image(result['image'], caption="Your Preview", use_container_width=True)
+                    # Pan/zoom preview using panzoom.js
+                    import base64
+                    with open(result['image'], 'rb') as img_f:
+                        img_b64 = base64.b64encode(img_f.read()).decode()
+                    panzoom_html = (
+                        "<!DOCTYPE html><html><head><style>"
+                        "body{margin:0;background:#111;overflow:hidden;}"
+                        "#container{width:100%;height:520px;overflow:hidden;position:relative;"
+                        "display:flex;align-items:center;justify-content:center;"
+                        "background:#111;border-radius:8px;cursor:grab;}"
+                        "#container:active{cursor:grabbing;}"
+                        "#img-wrap{display:inline-block;}"
+                        "#preview-img{display:block;max-width:100%;max-height:500px;user-select:none;}"
+                        "#hint{position:absolute;bottom:8px;right:10px;color:#555;font-size:0.72rem;"
+                        "font-family:sans-serif;pointer-events:none;}"
+                        "#reset-btn{position:absolute;top:8px;right:10px;background:#333;color:#aaa;"
+                        "border:1px solid #555;border-radius:4px;padding:3px 10px;font-size:0.75rem;"
+                        "cursor:pointer;font-family:sans-serif;}"
+                        "#reset-btn:hover{background:#444;color:#fff;}"
+                        "</style></head><body>"
+                        "<div id=\"container\">"
+                        "<div id=\"img-wrap\">"
+                        f"<img id=\"preview-img\" src=\"data:image/png;base64,{img_b64}\" draggable=\"false\" />"
+                        "</div>"
+                        "<button id=\"reset-btn\" onclick=\"resetView()\">Reset</button>"
+                        "<div id=\"hint\">🖱 Scroll to zoom &nbsp;·&nbsp; Drag to pan</div>"
+                        "</div>"
+                        "<script src=\"https://cdnjs.cloudflare.com/ajax/libs/panzoom/9.4.3/panzoom.min.js\"></script>"
+                        "<script>"
+                        "var elem=document.getElementById('img-wrap');"
+                        "var instance=panzoom(elem,{maxZoom:8,minZoom:0.5,bounds:false,boundsPadding:0.1,smoothScroll:true});"
+                        "function resetView(){instance.moveTo(0,0);instance.zoomAbs(0,0,1);}"
+                        "</script></body></html>"
+                    )
+                    import streamlit.components.v1 as components
+                    components.html(panzoom_html, height=530, scrolling=False)
+                    st.caption("Your Preview")
             
                 with col2:
                     st.markdown("### Preview Info")
