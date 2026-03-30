@@ -1462,6 +1462,7 @@ with st.sidebar:
   <div style="font-size:1.3rem;font-weight:bold;color:#fff;margin-bottom:6px;">🤖 Got a file issue? Ask me.</div>
   <div style="font-size:0.95rem;color:#a0b8d0;margin-bottom:8px;">📁 File fixes &nbsp;·&nbsp; 🎨 Color questions &nbsp;·&nbsp; 🧵 Decoration methods &nbsp;·&nbsp; ✅ Best practices</div>
   <div style="font-size:0.9rem;color:#b0c4de;">Tell me what's going on and I'll tell you exactly how to tackle it and what to say to your customer.</div>
+  <div style="font-size:0.78rem;color:#556a7a;margin-top:6px;">💡 I'm a general production assistant — I can't see your uploaded file, but I know everything about promo production.</div>
 </div>
 """, unsafe_allow_html=True)
 
