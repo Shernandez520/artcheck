@@ -1497,22 +1497,27 @@ with st.sidebar:
         q = st.session_state.artbot_pending
         st.session_state.artbot_pending = None
         st.session_state.artbot_input_value = ""
-        _run_artbot(q)
+        with st.spinner("🤖 ArtBot is thinking..."):
+            _run_artbot(q)
         st.rerun()
+
+    # Chat history label
+    st.markdown('<div style="font-size:0.75rem;color:#555;margin-bottom:3px;padding-left:2px;">💬 Conversation</div>', unsafe_allow_html=True)
 
     # Scrollable chat history box
     chat_html = ""
     if not st.session_state.artbot_history:
-        chat_html = '<div style="color:#666;font-size:0.85rem;text-align:center;padding-top:30px;">Ask me anything about files,<br>colors, or decoration methods!</div>'
+        chat_html = '<div style="color:#555;font-size:0.85rem;text-align:center;padding-top:40px;">💬 Conversation will appear here<br><br><span style="color:#444;font-size:0.8rem;">Use the input box below to ask a question</span></div>'
     for msg in st.session_state.artbot_history:
         if msg["role"] == "user":
             chat_html += f'''<div style="margin:4px 0;padding:6px 10px;background:#2b2d42;border-radius:10px 10px 3px 10px;color:#fff;font-size:0.95rem;text-align:right;">{msg["content"]}</div>'''
         else:
             chat_html += f'''<div style="margin:4px 0;padding:6px 10px;background:#1e3a5f;border-radius:10px 10px 10px 3px;color:#e0e0e0;font-size:0.95rem;">🤖 {msg["content"]}</div>'''
     st.markdown(
-        f'''<div style="height:500px;overflow-y:auto;padding:6px;border:1px solid #333;border-radius:8px;background:#111;margin-bottom:8px;">{chat_html}</div>''',
+        f'''<div style="height:460px;overflow-y:auto;padding:8px;border:2px solid #1e3a5f;border-radius:8px;background:#0d1117;margin-bottom:4px;cursor:default;">{chat_html}</div>''',
         unsafe_allow_html=True
     )
+    st.markdown('<div style="font-size:0.75rem;color:#555;margin-bottom:6px;padding-left:2px;">✏️ Type your question below</div>', unsafe_allow_html=True)
 
     # Example question chips — only show when no history
     if not st.session_state.artbot_history:
