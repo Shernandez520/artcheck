@@ -1519,7 +1519,6 @@ with st.sidebar:
         st.caption("💡 Try one of these:")
         examples = [
             "What does 'fonts not outlined' mean?",
-            "What DPI for a 2 inch logo?",
             "Difference between vector and raster?",
             "Can gradients be embroidered?",
             "Can I use customer website graphics for production?",
