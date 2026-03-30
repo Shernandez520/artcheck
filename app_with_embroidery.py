@@ -524,8 +524,18 @@ class PreviewGenerator:
             img = Image.open(output_file).convert('RGBA')
 
             if bg_type == 'transparent':
-                # Keep as-is, just save as RGBA PNG
-                img.save(output_file, 'PNG')
+                # Render classic Photoshop-style checkerboard to show transparency
+                checker_size = max(16, min(img.width, img.height) // 30)
+                checker = Image.new('RGBA', img.size, (255, 255, 255, 255))
+                draw_checker = ImageDraw.Draw(checker)
+                light = (204, 204, 204, 255)
+                dark_sq = (153, 153, 153, 255)
+                for y in range(0, img.height, checker_size):
+                    for x in range(0, img.width, checker_size):
+                        color = dark_sq if (x // checker_size + y // checker_size) % 2 == 0 else light
+                        draw_checker.rectangle([x, y, x+checker_size, y+checker_size], fill=color)
+                checker.paste(img, mask=img.split()[3])
+                checker.convert('RGB').save(output_file, 'PNG')
                 return
 
             # Determine background color
@@ -1624,22 +1634,21 @@ if uploaded_file:
     if 'bg_type' not in st.session_state:
         st.session_state.bg_type = 'auto'
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        if st.button("🔄 Auto", use_container_width=True):
-            st.session_state.bg_type = 'auto'
-    with col2:
-        if st.button("☀️ Light", use_container_width=True):
-            st.session_state.bg_type = 'light'
-    with col3:
-        if st.button("🌙 Dark", use_container_width=True):
-            st.session_state.bg_type = 'dark'
-    with col4:
-        if st.button("⬜ Transparent", use_container_width=True):
-            st.session_state.bg_type = 'transparent'
+    bg_type = st.session_state.bg_type
+
+    # Highlighted background selector buttons
+    btn_labels = [("🔄 Auto", "auto"), ("☀️ Light", "light"), ("🌙 Dark", "dark"), ("⬜ Transparent", "transparent")]
+    cols = st.columns(4)
+    for col, (label, val) in zip(cols, btn_labels):
+        with col:
+            selected = bg_type == val
+            btn_style = "primary" if selected else "secondary"
+            if st.button(label, use_container_width=True, type=btn_style):
+                st.session_state.bg_type = val
+                st.rerun()
 
     bg_type = st.session_state.bg_type
-    st.caption(f"Background: **{bg_type.title()}**")
+    st.caption(f"Background: **{bg_type.title()}** — click Generate Preview to apply a new background")
 
     # Generate Preview
     if st.button("🚀 Generate Preview", use_container_width=True, type="primary"):
