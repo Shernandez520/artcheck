@@ -1594,6 +1594,7 @@ st.info(f"**Supported:** Vector files ({vector_formats}) | Embroidery files ({em
 
 uploaded_file = st.file_uploader(
     "🎨 Drag and drop your file here or click to browse",
+    key=f"uploader_{st.session_state.get('file_uploader_key', 0)}",
     type=['ai', 'eps', 'pdf', 'svg', 'cdr', 'xcf', 'indd', 'dst', 'pes', 'exp', 'jef', 'vp3', 'xxx', 'u01',
           'png', 'jpg', 'jpeg', 'gif', 'tiff', 'tif', 'bmp', 'webp'],
     help="Supports vector, embroidery, and raster image files up to 200MB"
@@ -1615,7 +1616,13 @@ if uploaded_file:
         """)
         st.stop()
 
-    st.success(f"✓ Uploaded: **{uploaded_file.name}** ({uploaded_file.size / 1024 / 1024:.2f} MB)")
+    col_succ, col_clear = st.columns([4, 1])
+    with col_succ:
+        st.success(f"✓ Uploaded: **{uploaded_file.name}** ({uploaded_file.size / 1024 / 1024:.2f} MB)")
+    with col_clear:
+        if st.button("🔄 New File", use_container_width=True, help="Clear this file and upload a new one"):
+            st.session_state['file_uploader_key'] = st.session_state.get('file_uploader_key', 0) + 1
+            st.rerun()
 
     # Handle raster images separately
     raster_analyzer = RasterAnalyzer()
