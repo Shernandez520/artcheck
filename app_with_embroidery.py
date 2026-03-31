@@ -1732,55 +1732,54 @@ if uploaded_file:
 
     # Generate Preview
     if st.button("🚀 Generate Preview", use_container_width=True, type="primary"):
-        st.session_state['_just_generated'] = True
         with st.spinner("Generating preview..."):
-            # Save uploaded file to temp location
             with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp_file:
                 tmp_file.write(uploaded_file.getvalue())
                 tmp_path = tmp_file.name
-        
+
             generator = get_preview_generator()
             result = generator.generate_preview(tmp_path, bg_type)
 
-            # Extract colors from vector source before cleanup
             color_data = None
             file_ext = Path(uploaded_file.name).suffix.lower()
             if file_ext in [".pdf", ".ai", ".eps", ".svg"]:
                 extractor = get_color_extractor()
                 color_data = extractor.extract(tmp_path)
 
-            # Cleanup temp input
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
-        
-            if result:
-                # Build file context for ArtBot awareness
-                file_context = {
-                    'filename': uploaded_file.name,
-                    'file_type': result.get('file_type', 'unknown'),
-                    'width': result.get('width'),
-                    'height': result.get('height'),
-                    'size_kb': result.get('size_kb'),
-                    'color_data': color_data,
-                    'embroidery_info': result.get('embroidery_info'),
-                }
-                st.session_state['artbot_file_context'] = file_context
-                # Store image as bytes so it survives rerun after temp file is deleted
+
+            # Read image bytes BEFORE anything else
+            _image_bytes = None
+            if result and os.path.exists(result["image"]):
                 with open(result["image"], "rb") as _f:
-                    st.session_state['preview_image_bytes'] = _f.read()
-                st.session_state['preview_result'] = result
-                st.session_state['preview_color_data'] = color_data
-                st.session_state['preview_filename'] = uploaded_file.name
-                st.markdown('<div class="success-box">✅ Preview generated successfully!</div>', 
-                          unsafe_allow_html=True)
+                    _image_bytes = _f.read()
+
+        # Store everything in session state OUTSIDE the spinner
+        if result and _image_bytes:
+            st.session_state['preview_image_bytes'] = _image_bytes
+            st.session_state['preview_result'] = result
+            st.session_state['preview_color_data'] = color_data
+            st.session_state['preview_filename'] = uploaded_file.name
+            st.session_state['artbot_file_context'] = {
+                'filename': uploaded_file.name,
+                'file_type': result.get('file_type', 'unknown'),
+                'width': result.get('width'),
+                'height': result.get('height'),
+                'size_kb': result.get('size_kb'),
+                'color_data': color_data,
+                'embroidery_info': result.get('embroidery_info'),
+            }
+        st.markdown('<div class="success-box">✅ Preview generated successfully!</div>', 
+                  unsafe_allow_html=True)
             
-                # Display preview and info
-                col1, col2 = st.columns([2, 1])
+        # Display preview and info
+        col1, col2 = st.columns([2, 1])
             
-                with col1:
-                    import base64, streamlit.components.v1 as _components
-                    _b64 = base64.b64encode(open(result["image"], "rb").read()).decode()
-                    _pz = """<!DOCTYPE html>
+        with col1:
+            import base64, streamlit.components.v1 as _components
+            _b64 = base64.b64encode(open(result["image"], "rb").read()).decode()
+            _pz = """<!DOCTYPE html>
 <html><head><style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:#111;overflow:hidden;width:100%;height:490px;}
@@ -1859,58 +1858,58 @@ function zoomOut(){scale=Math.max(0.1,scale/1.25);apply();}
 function reset(){scale=fitScale;tx=0;ty=0;apply();}
 </script>
 </body></html>""".replace("IMG_B64", _b64)
-                    _components.html(_pz, height=495, scrolling=False)
-                    st.caption("Your Preview")
+            _components.html(_pz, height=495, scrolling=False)
+            st.caption("Your Preview")
             
-                with col2:
-                    st.markdown("### Preview Info")
-                    w_in = round(result["width"] / 300, 2)
-                    h_in = round(result["height"] / 300, 2)
-                    st.metric("Dimensions (px)", f"{result["width"]} × {result["height"]}")
-                    st.metric("Size (inches)", f'{w_in}" x {h_in}"')
-                    st.metric("File Size", f"{result['size_kb']} KB")
-                    st.metric("File Type", result['file_type'].title())
-                
-                    if 'embroidery_info' in result:
-                        emb = result['embroidery_info']
-                        st.markdown("### 🧵 Embroidery Info")
-                        st.metric("Stitch Count", f"{emb['stitch_count']:,}")
-                        st.metric("Thread Changes", emb['thread_changes'])
-                        st.metric("Size", f"{emb['width_mm']}mm × {emb['height_mm']}mm")
+        with col2:
+            st.markdown("### Preview Info")
+            w_in = round(result["width"] / 300, 2)
+            h_in = round(result["height"] / 300, 2)
+            st.metric("Dimensions (px)", f"{result["width"]} × {result["height"]}")
+            st.metric("Size (inches)", f'{w_in}" x {h_in}"')
+            st.metric("File Size", f"{result['size_kb']} KB")
+            st.metric("File Type", result['file_type'].title())
+        
+            if 'embroidery_info' in result:
+                emb = result['embroidery_info']
+                st.markdown("### 🧵 Embroidery Info")
+                st.metric("Stitch Count", f"{emb['stitch_count']:,}")
+                st.metric("Thread Changes", emb['thread_changes'])
+                st.metric("Size", f"{emb['width_mm']}mm × {emb['height_mm']}mm")
 
-                        # Thread color swatches (PES and other formats with color data)
-                        thread_colors = emb.get('thread_colors', [])
-                        unique_count = emb.get('unique_color_count', 0)
-                        if thread_colors and unique_count > 0:
-                            st.markdown(f"**Thread Colors** ({unique_count} unique)")
-                            swatch_html = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">'
-                            for c in thread_colors:
-                                border = "2px solid #888" if c["is_duplicate"] else "2px solid #444"
-                                swatch_html += (
-                                    f'<div style="text-align:center;">'
-                                    f'<div style="background:{c["hex"]};width:36px;height:36px;'
-                                    f'border-radius:4px;border:{border};"></div>'
-                                    f'<div style="font-size:0.65rem;color:#aaa;margin-top:2px;">{c["hex"]}</div>'
-                                    f'</div>'
-                                )
-                            swatch_html += '</div>'
-                            st.markdown(swatch_html, unsafe_allow_html=True)
-                
-                    st.markdown("---")
-                
-                    # Download preview
-                    with open(result['image'], 'rb') as f:
-                        st.download_button(
-                            label="⬇️ Download Preview (PNG)",
-                            data=f,
-                            file_name=f"{Path(uploaded_file.name).stem}_preview.png",
-                            mime="image/png",
-                            use_container_width=True
+                # Thread color swatches (PES and other formats with color data)
+                thread_colors = emb.get('thread_colors', [])
+                unique_count = emb.get('unique_color_count', 0)
+                if thread_colors and unique_count > 0:
+                    st.markdown(f"**Thread Colors** ({unique_count} unique)")
+                    swatch_html = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">'
+                    for c in thread_colors:
+                        border = "2px solid #888" if c["is_duplicate"] else "2px solid #444"
+                        swatch_html += (
+                            f'<div style="text-align:center;">'
+                            f'<div style="background:{c["hex"]};width:36px;height:36px;'
+                            f'border-radius:4px;border:{border};"></div>'
+                            f'<div style="font-size:0.65rem;color:#aaa;margin-top:2px;">{c["hex"]}</div>'
+                            f'</div>'
                         )
+                    swatch_html += '</div>'
+                    st.markdown(swatch_html, unsafe_allow_html=True)
+        
+            st.markdown("---")
+        
+            # Download preview
+            with open(result['image'], 'rb') as f:
+                st.download_button(
+                    label="⬇️ Download Preview (PNG)",
+                    data=f,
+                    file_name=f"{Path(uploaded_file.name).stem}_preview.png",
+                    mime="image/png",
+                    use_container_width=True
+                )
 
-                # Color analysis below the two-column preview
-                if color_data:
-                    render_color_results(color_data, Path(uploaded_file.name).suffix.lower())
+        # Color analysis below the two-column preview
+        if color_data:
+            render_color_results(color_data, Path(uploaded_file.name).suffix.lower())
 
 # Render stored preview if file is still loaded and preview exists from a previous generate
 if uploaded_file:
