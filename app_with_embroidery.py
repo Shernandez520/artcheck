@@ -1437,15 +1437,81 @@ def render_color_results(color_data, file_ext):
 # SIDEBAR - ASK ARTBOT
 # ============================================================================
 
+def build_artbot_system_prompt():
+    """Build ArtBot system prompt, injecting file context if a file has been analyzed."""
+    ctx = st.session_state.get('artbot_file_context')
+    if not ctx:
+        return ARTBOT_SYSTEM_PROMPT
+
+    lines = [f"\n\n--- CURRENT FILE CONTEXT ---"]
+    lines.append(f"The user has uploaded a file called '{ctx['filename']}' and ArtCheck has analyzed it.")
+    lines.append(f"File type: {ctx.get('file_type', 'unknown').title()}")
+
+    if ctx.get('width') and ctx.get('height'):
+        lines.append(f"Dimensions: {ctx['width']} × {ctx['height']} px")
+    if ctx.get('size_kb'):
+        lines.append(f"File size: {ctx['size_kb']} KB")
+
+    # Raster-specific
+    if ctx.get('dpi'):
+        lines.append(f"DPI (metadata): {ctx['dpi']}")
+    if ctx.get('color_mode'):
+        lines.append(f"Color mode: {ctx['color_mode']}")
+    if ctx.get('verdict'):
+        verdict_map = {'good': 'Production Ready', 'marginal': 'Borderline Quality', 'poor': 'Not Suitable for Production'}
+        lines.append(f"ArtCheck verdict: {verdict_map.get(ctx['verdict'], ctx['verdict'])}")
+    if ctx.get('warnings'):
+        lines.append(f"Warnings flagged: {'; '.join(ctx['warnings'])}")
+
+    # Vector color data
+    color_data = ctx.get('color_data')
+    if color_data:
+        color_mode = color_data.get('color_mode', '')
+        if color_mode:
+            lines.append(f"Color mode: {color_mode}")
+        spots = color_data.get('spot_colors', [])
+        if spots:
+            spot_names = [s.get('name', '') for s in spots if s.get('name')]
+            lines.append(f"Spot/Pantone colors found: {', '.join(spot_names) if spot_names else len(spots)}")
+        fills = color_data.get('fills', [])
+        if fills:
+            lines.append(f"Fill colors detected: {len(fills)}")
+        if color_data.get('gradients'):
+            lines.append(f"Gradients detected: {len(color_data['gradients'])}")
+
+    # Embroidery
+    emb = ctx.get('embroidery_info')
+    if emb and isinstance(emb, dict):
+        if emb.get('stitch_count'):
+            lines.append(f"Stitch count: {emb['stitch_count']:,}")
+        if emb.get('thread_colors'):
+            lines.append(f"Thread colors: {emb['thread_colors']}")
+
+    lines.append("\nUse this file context to give specific, relevant advice. Reference the actual file details in your answers rather than speaking generically.")
+    lines.append("--- END FILE CONTEXT ---")
+
+    return ARTBOT_SYSTEM_PROMPT + "\n".join(lines)
+
+
 with st.sidebar:
     st.markdown("### 🤖 Ask ArtBot")
     st.caption("Your AI production assistant - 20+ years of industry knowledge")
-    st.markdown("""
+    file_ctx = st.session_state.get('artbot_file_context')
+    if file_ctx:
+        st.markdown(f"""
+<div style="background:#1a2535;border-radius:8px;padding:12px 14px;margin-bottom:10px;border-left:3px solid #28a745;">
+  <div style="font-size:1.3rem;font-weight:bold;color:#fff;margin-bottom:6px;">🤖 I can see your file!</div>
+  <div style="font-size:0.9rem;color:#a0d0b0;margin-bottom:6px;">📁 <strong>{file_ctx['filename']}</strong></div>
+  <div style="font-size:0.9rem;color:#b0c4de;">Ask me anything about this specific file — I have all the details ArtCheck found.</div>
+</div>
+""", unsafe_allow_html=True)
+    else:
+        st.markdown("""
 <div style="background:#1a2535;border-radius:8px;padding:12px 14px;margin-bottom:10px;border-left:3px solid #667eea;">
   <div style="font-size:1.3rem;font-weight:bold;color:#fff;margin-bottom:6px;">🤖 Got a file issue? Ask me.</div>
   <div style="font-size:0.95rem;color:#a0b8d0;margin-bottom:8px;">📁 File fixes &nbsp;·&nbsp; 🎨 Color questions &nbsp;·&nbsp; 🧵 Decoration methods &nbsp;·&nbsp; ✅ Best practices</div>
   <div style="font-size:0.9rem;color:#b0c4de;">Tell me what's going on and I'll tell you exactly how to tackle it and what to say to your customer.</div>
-  <div style="font-size:0.78rem;color:#556a7a;margin-top:6px;">💡 I'm a general production assistant — I can't see your uploaded file, but I know everything about promo production.</div>
+  <div style="font-size:0.78rem;color:#556a7a;margin-top:6px;">💡 Generate a preview first and I'll be able to speak to your specific file.</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1468,7 +1534,7 @@ with st.sidebar:
             with client.messages.stream(
                 model="claude-sonnet-4-20250514",
                 max_tokens=1000,
-                system=ARTBOT_SYSTEM_PROMPT,
+                system=build_artbot_system_prompt(),
                 messages=st.session_state.artbot_history.copy()
             ) as stream:
                 for text in stream.text_stream:
@@ -1605,6 +1671,7 @@ if uploaded_file:
     with col_clear:
         if st.button("🔄 New File", use_container_width=True, help="Clear this file and upload a new one"):
             st.session_state['file_uploader_key'] = st.session_state.get('file_uploader_key', 0) + 1
+            st.session_state.pop('artbot_file_context', None)
             st.rerun()
 
     # Handle raster images separately
@@ -1622,6 +1689,19 @@ if uploaded_file:
         analysis = raster_analyzer.analyze(tmp_path)
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+        # Store context for ArtBot
+        st.session_state['artbot_file_context'] = {
+            'filename': uploaded_file.name,
+            'file_type': 'raster',
+            'width': analysis.get('width_px'),
+            'height': analysis.get('height_px'),
+            'dpi': analysis.get('dpi'),
+            'color_mode': analysis.get('color_mode'),
+            'verdict': analysis.get('verdict'),
+            'warnings': analysis.get('warnings', []),
+            'size_kb': round(uploaded_file.size / 1024, 2),
+        }
 
         render_raster_results(analysis, uploaded_file.name)
         st.stop()
@@ -1669,6 +1749,17 @@ if uploaded_file:
                 os.unlink(tmp_path)
         
             if result:
+                # Build file context for ArtBot awareness
+                file_context = {
+                    'filename': uploaded_file.name,
+                    'file_type': result.get('file_type', 'unknown'),
+                    'width': result.get('width'),
+                    'height': result.get('height'),
+                    'size_kb': result.get('size_kb'),
+                    'color_data': color_data,
+                    'embroidery_info': result.get('embroidery_info'),
+                }
+                st.session_state['artbot_file_context'] = file_context
                 st.markdown('<div class="success-box">✅ Preview generated successfully!</div>', 
                           unsafe_allow_html=True)
             
