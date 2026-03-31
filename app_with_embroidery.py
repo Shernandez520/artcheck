@@ -1650,6 +1650,15 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file:
+    # Clear stored preview if a different file is uploaded
+    if st.session_state.get('preview_filename') and \
+            st.session_state.get('preview_filename') != uploaded_file.name:
+        st.session_state.pop('preview_image_bytes', None)
+        st.session_state.pop('preview_result', None)
+        st.session_state.pop('preview_color_data', None)
+        st.session_state.pop('preview_filename', None)
+        st.session_state.pop('artbot_file_context', None)
+
     # Check for InDesign files
     if uploaded_file.name.lower().endswith('.indd'):
         st.error("### 📄 InDesign Files Not Supported")
@@ -1772,9 +1781,7 @@ if uploaded_file:
         st.rerun()  # Rerun so session state block handles all rendering cleanly
 
 # Render stored preview from session state (persists across ArtBot reruns)
-if uploaded_file and \
-        st.session_state.get('preview_image_bytes') and \
-        st.session_state.get('preview_filename') == uploaded_file.name:
+if st.session_state.get('preview_image_bytes') and st.session_state.get('preview_result'):
     result = st.session_state['preview_result']
     color_data = st.session_state.get('preview_color_data')
     img_bytes = st.session_state['preview_image_bytes']
