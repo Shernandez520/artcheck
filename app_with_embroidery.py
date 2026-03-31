@@ -1803,7 +1803,8 @@ if st.session_state.get('preview_image_bytes') and st.session_state.get('preview
         if result.get('file_type'):
             st.metric("File Type", result['file_type'].title())
     if color_data:
-        render_color_results(color_data, Path(uploaded_file.name).suffix.lower())
+        stored_filename = st.session_state.get('preview_filename', '')
+        render_color_results(color_data, Path(stored_filename).suffix.lower())
 
 # Footer
 st.markdown("---")
