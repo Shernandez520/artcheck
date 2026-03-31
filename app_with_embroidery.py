@@ -692,6 +692,14 @@ class PreviewGenerator:
 # RASTER ANALYZER - Handles PNG/JPG/GIF/TIFF/BMP/WEBP uploads
 # ============================================================================
 
+@st.cache_resource
+def get_preview_generator():
+    return PreviewGenerator()
+
+@st.cache_resource
+def get_color_extractor():
+    return ColorExtractor()
+
 class RasterAnalyzer:
     """Analyzes raster image files for production suitability"""
 
@@ -1671,14 +1679,14 @@ if uploaded_file:
                 tmp_file.write(uploaded_file.getvalue())
                 tmp_path = tmp_file.name
         
-            generator = PreviewGenerator()
+            generator = get_preview_generator()
             result = generator.generate_preview(tmp_path, bg_type)
 
             # Extract colors from vector source before cleanup
             color_data = None
             file_ext = Path(uploaded_file.name).suffix.lower()
             if file_ext in [".pdf", ".ai", ".eps", ".svg"]:
-                extractor = ColorExtractor()
+                extractor = get_color_extractor()
                 color_data = extractor.extract(tmp_path)
 
             # Cleanup temp input
