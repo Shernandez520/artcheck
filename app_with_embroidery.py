@@ -1913,9 +1913,12 @@ function reset(){scale=fitScale;tx=0;ty=0;apply();}
                     render_color_results(color_data, Path(uploaded_file.name).suffix.lower())
 
 # Render stored preview if file is still loaded and preview exists from a previous generate
+if uploaded_file:
+    st.caption(f"DEBUG: just_generated={st.session_state.get('_just_generated')} | has_bytes={bool(st.session_state.get('preview_image_bytes'))} | filename={st.session_state.get('preview_filename')} | current={uploaded_file.name if uploaded_file else None}")
 if uploaded_file and not st.session_state.get('_just_generated') and \
         st.session_state.get('preview_image_bytes') and \
         st.session_state.get('preview_filename') == uploaded_file.name:
+    st.caption(f"DEBUG: rendering from session state | just_generated={st.session_state.get('_just_generated')} | has_bytes={bool(st.session_state.get('preview_image_bytes'))} | filename_match={st.session_state.get('preview_filename')==uploaded_file.name}")
     result = st.session_state['preview_result']
     color_data = st.session_state.get('preview_color_data')
     img_bytes = st.session_state['preview_image_bytes']
