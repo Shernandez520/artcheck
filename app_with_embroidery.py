@@ -1614,26 +1614,36 @@ with st.sidebar:
 # FILE UPLOAD SECTION
 # ============================================================================
 
-st.markdown("""
-<div style="padding:2rem 0 1.5rem 0;">
-    <div style="font-size:2.8rem;font-weight:800;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1.1;margin-bottom:0.5rem;">
-        🎨 ArtCheck
-    </div>
-    <div style="font-size:1.25rem;color:#ccc;font-weight:400;margin-bottom:1rem;">
-        Instant art file screening for promotional products professionals.
-    </div>
-    <div style="font-size:0.95rem;color:#888;max-width:720px;line-height:1.7;">
-        Built for sales reps and customer service teams who need quick answers on art files — 
-        without waiting on the art department. Upload any vector, embroidery, or image file 
-        to get an instant preview, color analysis, and production suitability check. 
-        Ask ArtBot in the sidebar for expert guidance on file requirements, decoration methods, 
-        and what to tell your customer.
+# Header — adapts based on whether a preview has been generated
+has_preview = bool(st.session_state.get('preview_image_bytes'))
+preview_filename = st.session_state.get('preview_filename', '')
+
+if has_preview:
+    st.markdown(f"""
+<div style="padding:1.25rem 0 1rem 0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+    <div>
+        <div style="font-size:1.6rem;font-weight:700;color:#fff;letter-spacing:-0.02em;">
+            ArtCheck
+            <span style="font-size:0.9rem;font-weight:400;color:#666;margin-left:0.75rem;letter-spacing:0;">/ {preview_filename}</span>
+        </div>
+        <div style="font-size:0.9rem;color:#888;margin-top:0.2rem;">Preview ready — ask ArtBot about this file in the sidebar →</div>
     </div>
 </div>
-<hr style="border:none;border-top:1px solid #333;margin-bottom:1.5rem;">
+<hr style="border:none;border-top:1px solid #2a2a2a;margin-bottom:1.25rem;">
 """, unsafe_allow_html=True)
-
-st.markdown("## 📁 Upload Your File")
+else:
+    st.markdown("""
+<div style="padding:1.75rem 0 1.25rem 0;">
+    <div style="font-size:2rem;font-weight:700;color:#fff;letter-spacing:-0.03em;margin-bottom:0.4rem;">
+        ArtCheck
+    </div>
+    <div style="font-size:1rem;color:#999;font-weight:400;max-width:560px;line-height:1.5;">
+        Drop a file. Get an instant preview, color breakdown, and production check —
+        without waiting on the art department.
+    </div>
+</div>
+<hr style="border:none;border-top:1px solid #2a2a2a;margin-bottom:1.25rem;">
+""", unsafe_allow_html=True)
 
 vector_formats = ".ai, .eps, .pdf, .svg, .cdr, .xcf"
 embroidery_formats = ".dst, .pes, .exp, .jef, .vp3, .xxx, .u01"
