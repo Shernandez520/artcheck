@@ -1517,7 +1517,6 @@ with st.sidebar:
 
     if "artbot_history" not in st.session_state:
         st.session_state.artbot_history = []
-    st.session_state['_just_generated'] = False  # Reset each run
     if "artbot_input_value" not in st.session_state:
         st.session_state.artbot_input_value = ""
     if "artbot_input_key" not in st.session_state:
@@ -1940,6 +1939,9 @@ if uploaded_file and not st.session_state.get('_just_generated') and \
             st.metric("File Type", result['file_type'].title())
     if color_data:
         render_color_results(color_data, Path(uploaded_file.name).suffix.lower())
+
+# Reset just_generated so next rerun shows stored preview
+st.session_state['_just_generated'] = False
 
 # Footer
 st.markdown("---")
