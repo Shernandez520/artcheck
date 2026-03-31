@@ -36,8 +36,6 @@ st.set_page_config(
 # Custom CSS — full visual overhaul
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500&display=swap');
-
     /* Page background — stronger gradient mesh */
     .stApp {
         background:
@@ -46,7 +44,7 @@ st.markdown("""
             radial-gradient(ellipse at 70% 85%, rgba(200, 50, 120, 0.20) 0%, transparent 45%),
             radial-gradient(ellipse at 50% 50%, rgba(20, 10, 40, 0.8) 0%, transparent 70%),
             #08080e;
-        font-family: 'Inter', sans-serif;
+        font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
     }
 
     /* Force background on all Streamlit wrappers */
@@ -67,7 +65,7 @@ st.markdown("""
     }
     section[data-testid="stSidebar"] * {
         font-size: 0.95rem !important;
-        font-family: 'Inter', sans-serif !important;
+        font-family: -apple-system,'Segoe UI',system-ui,sans-serif !important;
     }
     section[data-testid="stSidebar"] .stButton button { font-size: 0.95rem !important; }
     section[data-testid="stSidebar"] .stTextInput input { font-size: 0.95rem !important; }
@@ -90,7 +88,7 @@ st.markdown("""
     /* Buttons */
     .stButton > button {
         border-radius: 8px !important;
-        font-family: 'Inter', sans-serif !important;
+        font-family: -apple-system,'Segoe UI',system-ui,sans-serif !important;
         font-weight: 500 !important;
         letter-spacing: 0.01em !important;
         transition: all 0.2s !important;
@@ -131,7 +129,7 @@ st.markdown("""
         color: #6fcf8a;
         font-size: 1rem;
         font-weight: 600;
-        font-family: 'Inter', sans-serif;
+        font-family: -apple-system,'Segoe UI',system-ui,sans-serif;
     }
 
     /* Dividers */
@@ -1681,11 +1679,11 @@ if has_preview:
 <div style="padding:1.25rem 0 1rem 0;display:flex;align-items:center;gap:1rem;">
     <svg width="32" height="32" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="14" cy="14" r="11" fill="#00B8D9" opacity="0.9"/><circle cx="26" cy="14" r="11" fill="#FF5630" opacity="0.9"/><circle cx="14" cy="26" r="11" fill="#FFAB00" opacity="0.9"/><circle cx="26" cy="26" r="11" fill="#36B37E" opacity="0.9"/></svg>
     <div>
-        <div style="font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:700;color:#ffffff;letter-spacing:-0.02em;line-height:1;">
+        <div style="font-family:-apple-system,'Segoe UI',system-ui,sans-serif;font-size:1.5rem;font-weight:700;color:#ffffff;letter-spacing:-0.02em;line-height:1;">
             ArtCheck
-            <span style="font-size:0.8rem;font-weight:400;color:#aaa;margin-left:0.6rem;letter-spacing:0;font-family:'Inter',sans-serif;">{preview_filename}</span>
+            <span style="font-size:0.8rem;font-weight:400;color:#aaa;margin-left:0.6rem;letter-spacing:0;font-family:-apple-system,'Segoe UI',system-ui,sans-serif;">{preview_filename}</span>
         </div>
-        <div style="font-size:0.82rem;color:#a78bfa;margin-top:0.25rem;font-family:'Inter',sans-serif;font-weight:500;">
+        <div style="font-size:0.82rem;color:#a78bfa;margin-top:0.25rem;font-family:-apple-system,'Segoe UI',system-ui,sans-serif;font-weight:500;">
             Preview ready &nbsp;·&nbsp; Ask ArtBot about this file in the sidebar &rarr;
         </div>
     </div>
@@ -1697,10 +1695,10 @@ else:
 <div style="padding:2.5rem 0 1.75rem 0;display:flex;align-items:flex-start;gap:1.25rem;">
     <svg width="56" height="56" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;margin-top:2px;"><circle cx="14" cy="14" r="11" fill="#00B8D9" opacity="0.9"/><circle cx="26" cy="14" r="11" fill="#FF5630" opacity="0.9"/><circle cx="14" cy="26" r="11" fill="#FFAB00" opacity="0.9"/><circle cx="26" cy="26" r="11" fill="#36B37E" opacity="0.9"/></svg>
     <div>
-        <div style="font-family:'Syne',sans-serif;font-size:2.8rem;font-weight:800;color:#ffffff;letter-spacing:-0.04em;line-height:1;margin-bottom:0.6rem;">
+        <div style="font-family:-apple-system,'Segoe UI',system-ui,sans-serif;font-size:2.8rem;font-weight:800;color:#ffffff;letter-spacing:-0.04em;line-height:1;margin-bottom:0.6rem;">
             ArtCheck
         </div>
-        <div style="font-size:1.05rem;color:#c8c8e0;font-weight:400;max-width:480px;line-height:1.65;font-family:'Inter',sans-serif;">
+        <div style="font-size:1.05rem;color:#c8c8e0;font-weight:400;max-width:480px;line-height:1.65;font-family:-apple-system,'Segoe UI',system-ui,sans-serif;">
             Drop a file. Get an instant preview, color breakdown, and production check —
             no art department required.
         </div>
