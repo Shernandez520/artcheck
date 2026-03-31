@@ -33,63 +33,115 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS
+# Custom CSS — full visual overhaul
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 3rem;
-        font-weight: bold;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0.5rem;
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500&display=swap');
+
+    /* Page background — deep gradient mesh */
+    .stApp {
+        background:
+            radial-gradient(ellipse at 20% 20%, rgba(99, 76, 178, 0.18) 0%, transparent 55%),
+            radial-gradient(ellipse at 80% 10%, rgba(56, 120, 200, 0.15) 0%, transparent 50%),
+            radial-gradient(ellipse at 60% 80%, rgba(180, 60, 120, 0.10) 0%, transparent 50%),
+            #0a0a0f;
+        font-family: 'Inter', sans-serif;
     }
-    .tagline {
-        font-size: 1.2rem;
-        color: #666;
-        margin-bottom: 2rem;
+
+    /* Main content area */
+    .main .block-container {
+        padding-top: 2rem;
+        max-width: 900px;
     }
-    .success-box {
-        padding: 1.5rem;
-        border-radius: 0.5rem;
-        background: #d4edda;
-        border: 3px solid #28a745;
-        margin: 1rem 0;
-        color: #155724;
-        font-size: 1.1rem;
-        font-weight: bold;
-    }
-    .info-box {
-        padding: 1rem;
-        border-radius: 0.5rem;
-        background: #e3f2fd;
-        border-left: 4px solid #1976d2;
-        margin: 1rem 0;
-    }
-    .artbot-answer {
-        padding: 1.5rem;
-        border-radius: 0.5rem;
-        background: #f8f9fa;
-        border-left: 4px solid #667eea;
-        margin: 1rem 0;
-        font-size: 1rem;
-        line-height: 1.6;
-    }
-    .artbot-header {
-        color: #667eea;
-        font-weight: bold;
-        font-size: 1.1rem;
-        margin-bottom: 0.5rem;
+
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background: rgba(12, 12, 20, 0.95) !important;
+        border-right: 1px solid rgba(255,255,255,0.06) !important;
     }
     section[data-testid="stSidebar"] * {
         font-size: 0.95rem !important;
+        font-family: 'Inter', sans-serif !important;
     }
-    section[data-testid="stSidebar"] .stButton button {
-        font-size: 0.95rem !important;
+    section[data-testid="stSidebar"] .stButton button { font-size: 0.95rem !important; }
+    section[data-testid="stSidebar"] .stTextInput input { font-size: 0.95rem !important; }
+
+    /* Headings */
+    h1, h2, h3 { font-family: 'Syne', sans-serif !important; }
+
+    /* File uploader */
+    [data-testid="stFileUploader"] {
+        background: rgba(255,255,255,0.03) !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        border-radius: 12px !important;
+        padding: 0.5rem !important;
+        transition: border-color 0.2s;
     }
-    section[data-testid="stSidebar"] .stTextInput input {
-        font-size: 0.95rem !important;
+    [data-testid="stFileUploader"]:hover {
+        border-color: rgba(120, 100, 220, 0.5) !important;
     }
+
+    /* Buttons */
+    .stButton > button {
+        border-radius: 8px !important;
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 500 !important;
+        letter-spacing: 0.01em !important;
+        transition: all 0.2s !important;
+    }
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #6c4fd4 0%, #4a7fd4 100%) !important;
+        border: none !important;
+        color: #fff !important;
+    }
+    .stButton > button[kind="primary"]:hover {
+        opacity: 0.9 !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 4px 20px rgba(108, 79, 212, 0.4) !important;
+    }
+
+    /* Metrics */
+    [data-testid="stMetric"] {
+        background: rgba(255,255,255,0.03) !important;
+        border: 1px solid rgba(255,255,255,0.07) !important;
+        border-radius: 10px !important;
+        padding: 0.75rem 1rem !important;
+    }
+
+    /* Info/warning boxes */
+    .stAlert {
+        border-radius: 10px !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        background: rgba(255,255,255,0.03) !important;
+    }
+
+    /* Success box */
+    .success-box {
+        padding: 1rem 1.25rem;
+        border-radius: 10px;
+        background: rgba(40, 167, 69, 0.12);
+        border: 1px solid rgba(40, 167, 69, 0.35);
+        margin: 1rem 0;
+        color: #6fcf8a;
+        font-size: 1rem;
+        font-weight: 600;
+        font-family: 'Inter', sans-serif;
+    }
+
+    /* Dividers */
+    hr { border-color: rgba(255,255,255,0.07) !important; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+
+    /* Keep unused classes for safety */
+    .main-header { font-size: 3rem; font-weight: bold; }
+    .tagline { font-size: 1.2rem; color: #999; }
+    .info-box { padding: 1rem; border-radius: 8px; background: rgba(25,118,210,0.1); border-left: 4px solid #1976d2; }
+    .artbot-answer { padding: 1.5rem; border-radius: 8px; background: rgba(255,255,255,0.03); border-left: 4px solid #6c4fd4; }
+    .artbot-header { color: #8b7cf8; font-weight: bold; font-size: 1.1rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1620,29 +1672,29 @@ preview_filename = st.session_state.get('preview_filename', '')
 
 if has_preview:
     st.markdown(f"""
-<div style="padding:1.25rem 0 1rem 0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
-    <div>
-        <div style="font-size:1.6rem;font-weight:700;color:#fff;letter-spacing:-0.02em;">
-            ArtCheck
-            <span style="font-size:0.9rem;font-weight:400;color:#666;margin-left:0.75rem;letter-spacing:0;">/ {preview_filename}</span>
-        </div>
-        <div style="font-size:0.9rem;color:#888;margin-top:0.2rem;">Preview ready — ask ArtBot about this file in the sidebar →</div>
+<div style="padding:1.25rem 0 1rem 0;">
+    <div style="font-family:'Syne',sans-serif;font-size:1.6rem;font-weight:700;color:#fff;letter-spacing:-0.02em;">
+        ArtCheck
+        <span style="font-size:0.85rem;font-weight:400;color:#555;margin-left:0.75rem;letter-spacing:0;font-family:'Inter',sans-serif;">{preview_filename}</span>
+    </div>
+    <div style="font-size:0.85rem;color:#7c5fd4;margin-top:0.3rem;font-family:'Inter',sans-serif;font-weight:500;">
+        ✦ Preview ready &nbsp;·&nbsp; Ask ArtBot about this file in the sidebar →
     </div>
 </div>
-<hr style="border:none;border-top:1px solid #2a2a2a;margin-bottom:1.25rem;">
+<hr style="border:none;border-top:1px solid rgba(255,255,255,0.07);margin-bottom:1.25rem;">
 """, unsafe_allow_html=True)
 else:
     st.markdown("""
-<div style="padding:1.75rem 0 1.25rem 0;">
-    <div style="font-size:2rem;font-weight:700;color:#fff;letter-spacing:-0.03em;margin-bottom:0.4rem;">
+<div style="padding:2rem 0 1.5rem 0;">
+    <div style="font-family:'Syne',sans-serif;font-size:2.6rem;font-weight:800;color:#fff;letter-spacing:-0.04em;line-height:1;margin-bottom:0.65rem;">
         ArtCheck
     </div>
-    <div style="font-size:1rem;color:#999;font-weight:400;max-width:560px;line-height:1.5;">
+    <div style="font-size:1rem;color:#666;font-weight:400;max-width:480px;line-height:1.6;font-family:'Inter',sans-serif;">
         Drop a file. Get an instant preview, color breakdown, and production check —
-        without waiting on the art department.
+        no art department required.
     </div>
 </div>
-<hr style="border:none;border-top:1px solid #2a2a2a;margin-bottom:1.25rem;">
+<hr style="border:none;border-top:1px solid rgba(255,255,255,0.07);margin-bottom:1.25rem;">
 """, unsafe_allow_html=True)
 
 vector_formats = ".ai, .eps, .pdf, .svg, .cdr, .xcf"
