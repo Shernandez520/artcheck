@@ -1517,6 +1517,7 @@ with st.sidebar:
 
     if "artbot_history" not in st.session_state:
         st.session_state.artbot_history = []
+    st.session_state['_just_generated'] = False  # Reset each run
     if "artbot_input_value" not in st.session_state:
         st.session_state.artbot_input_value = ""
     if "artbot_input_key" not in st.session_state:
@@ -1731,6 +1732,7 @@ if uploaded_file:
 
     # Generate Preview
     if st.button("🚀 Generate Preview", use_container_width=True, type="primary"):
+        st.session_state['_just_generated'] = True
         with st.spinner("Generating preview..."):
             # Save uploaded file to temp location
             with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp_file:
@@ -1763,6 +1765,9 @@ if uploaded_file:
                     'embroidery_info': result.get('embroidery_info'),
                 }
                 st.session_state['artbot_file_context'] = file_context
+                # Store image as bytes so it survives rerun after temp file is deleted
+                with open(result["image"], "rb") as _f:
+                    st.session_state['preview_image_bytes'] = _f.read()
                 st.session_state['preview_result'] = result
                 st.session_state['preview_color_data'] = color_data
                 st.session_state['preview_filename'] = uploaded_file.name
@@ -1907,30 +1912,32 @@ function reset(){scale=fitScale;tx=0;ty=0;apply();}
                 if color_data:
                     render_color_results(color_data, Path(uploaded_file.name).suffix.lower())
 
-    # Render stored preview if it exists and Generate wasn't just clicked
-    elif st.session_state.get('preview_result') and st.session_state.get('preview_filename') == uploaded_file.name:
-        result = st.session_state['preview_result']
-        color_data = st.session_state.get('preview_color_data')
-        st.markdown('<div class="success-box">✅ Preview generated successfully!</div>', unsafe_allow_html=True)
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            import base64, streamlit.components.v1 as _components
-            if os.path.exists(result["image"]):
-                _b64 = base64.b64encode(open(result["image"], "rb").read()).decode()
-                st.image(result["image"], use_container_width=True)
-        with col2:
-            st.markdown("**Preview Info**")
-            if result.get('width'):
-                st.metric("Dimensions (px)", f"{result['width']} × {result['height']}")
-                w_in = round(result['width'] / 300, 2)
-                h_in = round(result['height'] / 300, 2)
-                st.metric("Size (inches)", f"{w_in}\" x {h_in}\"")
-            if result.get('size_kb'):
-                st.metric("File Size", f"{result['size_kb']} KB")
-            if result.get('file_type'):
-                st.metric("File Type", result['file_type'].title())
-        if color_data:
-            render_color_results(color_data, Path(uploaded_file.name).suffix.lower())
+# Render stored preview if file is still loaded and preview exists from a previous generate
+if uploaded_file and not st.session_state.get('_just_generated') and \
+        st.session_state.get('preview_image_bytes') and \
+        st.session_state.get('preview_filename') == uploaded_file.name:
+    result = st.session_state['preview_result']
+    color_data = st.session_state.get('preview_color_data')
+    img_bytes = st.session_state['preview_image_bytes']
+    st.markdown('<div class="success-box">✅ Preview generated successfully!</div>', unsafe_allow_html=True)
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        from PIL import Image as _PIL
+        import io
+        st.image(_PIL.open(io.BytesIO(img_bytes)), use_container_width=True)
+    with col2:
+        st.markdown("**Preview Info**")
+        if result.get('width'):
+            st.metric("Dimensions (px)", f"{result['width']} × {result['height']}")
+            w_in = round(result['width'] / 300, 2)
+            h_in = round(result['height'] / 300, 2)
+            st.metric("Size (inches)", f"{w_in}\" x {h_in}\"")
+        if result.get('size_kb'):
+            st.metric("File Size", f"{result['size_kb']} KB")
+        if result.get('file_type'):
+            st.metric("File Type", result['file_type'].title())
+    if color_data:
+        render_color_results(color_data, Path(uploaded_file.name).suffix.lower())
 
 # Footer
 st.markdown("---")
