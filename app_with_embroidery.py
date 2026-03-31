@@ -1672,6 +1672,9 @@ if uploaded_file:
         if st.button("🔄 New File", use_container_width=True, help="Clear this file and upload a new one"):
             st.session_state['file_uploader_key'] = st.session_state.get('file_uploader_key', 0) + 1
             st.session_state.pop('artbot_file_context', None)
+            st.session_state.pop('preview_result', None)
+            st.session_state.pop('preview_color_data', None)
+            st.session_state.pop('preview_filename', None)
             st.rerun()
 
     # Handle raster images separately
@@ -1760,6 +1763,9 @@ if uploaded_file:
                     'embroidery_info': result.get('embroidery_info'),
                 }
                 st.session_state['artbot_file_context'] = file_context
+                st.session_state['preview_result'] = result
+                st.session_state['preview_color_data'] = color_data
+                st.session_state['preview_filename'] = uploaded_file.name
                 st.markdown('<div class="success-box">✅ Preview generated successfully!</div>', 
                           unsafe_allow_html=True)
             
@@ -1900,6 +1906,31 @@ function reset(){scale=fitScale;tx=0;ty=0;apply();}
                 # Color analysis below the two-column preview
                 if color_data:
                     render_color_results(color_data, Path(uploaded_file.name).suffix.lower())
+
+    # Render stored preview if it exists and Generate wasn't just clicked
+    elif st.session_state.get('preview_result') and st.session_state.get('preview_filename') == uploaded_file.name:
+        result = st.session_state['preview_result']
+        color_data = st.session_state.get('preview_color_data')
+        st.markdown('<div class="success-box">✅ Preview generated successfully!</div>', unsafe_allow_html=True)
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            import base64, streamlit.components.v1 as _components
+            if os.path.exists(result["image"]):
+                _b64 = base64.b64encode(open(result["image"], "rb").read()).decode()
+                st.image(result["image"], use_container_width=True)
+        with col2:
+            st.markdown("**Preview Info**")
+            if result.get('width'):
+                st.metric("Dimensions (px)", f"{result['width']} × {result['height']}")
+                w_in = round(result['width'] / 300, 2)
+                h_in = round(result['height'] / 300, 2)
+                st.metric("Size (inches)", f"{w_in}\" x {h_in}\"")
+            if result.get('size_kb'):
+                st.metric("File Size", f"{result['size_kb']} KB")
+            if result.get('file_type'):
+                st.metric("File Type", result['file_type'].title())
+        if color_data:
+            render_color_results(color_data, Path(uploaded_file.name).suffix.lower())
 
 # Footer
 st.markdown("---")
