@@ -1769,154 +1769,12 @@ if uploaded_file:
                 'color_data': color_data,
                 'embroidery_info': result.get('embroidery_info'),
             }
-        st.markdown('<div class="success-box">✅ Preview generated successfully!</div>', 
-                  unsafe_allow_html=True)
-            
-        # Display preview and info
-        col1, col2 = st.columns([2, 1])
-            
-        with col1:
-            import base64, streamlit.components.v1 as _components
-            _b64 = base64.b64encode(open(result["image"], "rb").read()).decode()
-            _pz = """<!DOCTYPE html>
-<html><head><style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{background:#111;overflow:hidden;width:100%;height:490px;}
-#viewport{width:100%;height:490px;overflow:hidden;position:relative;
-  background:#111;border-radius:8px;cursor:grab;}
-#viewport.grabbing{cursor:grabbing;}
-#img{position:absolute;top:50%;left:50%;transform-origin:center center;
-  max-width:none;display:block;user-select:none;pointer-events:none;}
-#controls{position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:10;}
-.ctrl-btn{background:#222;color:#aaa;border:1px solid #444;border-radius:4px;
-  padding:4px 10px;font-size:0.75rem;cursor:pointer;font-family:sans-serif;}
-.ctrl-btn:hover{background:#333;color:#fff;}
-</style></head><body>
-<div id="viewport">
-  <img id="img" src="data:image/png;base64,IMG_B64" draggable="false"/>
-  <div id="controls">
-    <button class="ctrl-btn" onclick="zoomIn()">+</button>
-    <button class="ctrl-btn" onclick="zoomOut()">-</button>
-    <button class="ctrl-btn" onclick="reset()">Reset</button>
-  </div>
-</div>
-<script>
-var vp=document.getElementById('viewport');
-var img=document.getElementById('img');
-var tx=0,ty=0,dragging=false,sx=0,sy=0,stx=0,sty=0;
+        st.rerun()  # Rerun so session state block handles all rendering cleanly
 
-// Calculate initial scale to fit image inside container
-var vw=vp.offsetWidth||760, vh=vp.offsetHeight||490;
-var iw=img.naturalWidth||img.width||760, ih=img.naturalHeight||img.height||490;
-var scale=Math.min(vw/iw, vh/ih, 1);
-
-function apply(){
-  img.style.transform='translate(calc(-50% + '+tx+'px), calc(-50% + '+ty+'px)) scale('+scale+')';
-}
-
-// Wait for image to load before calculating fit
-img.onload=function(){
-  iw=img.naturalWidth; ih=img.naturalHeight;
-  scale=Math.min(vw/iw, vh/ih, 1);
-  apply();
-};
-apply();
-
-vp.addEventListener('wheel',function(e){
-  e.preventDefault();
-  var delta=e.deltaY<0?1.1:0.9;
-  scale=Math.min(8,Math.max(0.2,scale*delta));
-  apply();
-},{passive:false});
-
-vp.addEventListener('mousedown',function(e){
-  dragging=true;sx=e.clientX;sy=e.clientY;stx=tx;sty=ty;
-  vp.classList.add('grabbing');
-});
-window.addEventListener('mousemove',function(e){
-  if(!dragging)return;
-  tx=stx+(e.clientX-sx);ty=sty+(e.clientY-sy);apply();
-});
-window.addEventListener('mouseup',function(){dragging=false;vp.classList.remove('grabbing');});
-
-vp.addEventListener('touchstart',function(e){
-  if(e.touches.length===1){
-    dragging=true;sx=e.touches[0].clientX;sy=e.touches[0].clientY;stx=tx;sty=ty;
-  }
-},{passive:true});
-vp.addEventListener('touchmove',function(e){
-  if(dragging&&e.touches.length===1){
-    tx=stx+(e.touches[0].clientX-sx);ty=sty+(e.touches[0].clientY-sy);apply();
-  }
-},{passive:true});
-vp.addEventListener('touchend',function(){dragging=false;});
-
-var fitScale=scale;
-function zoomIn(){scale=Math.min(8,scale*1.25);apply();}
-function zoomOut(){scale=Math.max(0.1,scale/1.25);apply();}
-function reset(){scale=fitScale;tx=0;ty=0;apply();}
-</script>
-</body></html>""".replace("IMG_B64", _b64)
-            _components.html(_pz, height=495, scrolling=False)
-            st.caption("Your Preview")
-            
-        with col2:
-            st.markdown("### Preview Info")
-            w_in = round(result["width"] / 300, 2)
-            h_in = round(result["height"] / 300, 2)
-            st.metric("Dimensions (px)", f"{result["width"]} × {result["height"]}")
-            st.metric("Size (inches)", f'{w_in}" x {h_in}"')
-            st.metric("File Size", f"{result['size_kb']} KB")
-            st.metric("File Type", result['file_type'].title())
-        
-            if 'embroidery_info' in result:
-                emb = result['embroidery_info']
-                st.markdown("### 🧵 Embroidery Info")
-                st.metric("Stitch Count", f"{emb['stitch_count']:,}")
-                st.metric("Thread Changes", emb['thread_changes'])
-                st.metric("Size", f"{emb['width_mm']}mm × {emb['height_mm']}mm")
-
-                # Thread color swatches (PES and other formats with color data)
-                thread_colors = emb.get('thread_colors', [])
-                unique_count = emb.get('unique_color_count', 0)
-                if thread_colors and unique_count > 0:
-                    st.markdown(f"**Thread Colors** ({unique_count} unique)")
-                    swatch_html = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">'
-                    for c in thread_colors:
-                        border = "2px solid #888" if c["is_duplicate"] else "2px solid #444"
-                        swatch_html += (
-                            f'<div style="text-align:center;">'
-                            f'<div style="background:{c["hex"]};width:36px;height:36px;'
-                            f'border-radius:4px;border:{border};"></div>'
-                            f'<div style="font-size:0.65rem;color:#aaa;margin-top:2px;">{c["hex"]}</div>'
-                            f'</div>'
-                        )
-                    swatch_html += '</div>'
-                    st.markdown(swatch_html, unsafe_allow_html=True)
-        
-            st.markdown("---")
-        
-            # Download preview
-            with open(result['image'], 'rb') as f:
-                st.download_button(
-                    label="⬇️ Download Preview (PNG)",
-                    data=f,
-                    file_name=f"{Path(uploaded_file.name).stem}_preview.png",
-                    mime="image/png",
-                    use_container_width=True
-                )
-
-        # Color analysis below the two-column preview
-        if color_data:
-            render_color_results(color_data, Path(uploaded_file.name).suffix.lower())
-
-# Render stored preview if file is still loaded and preview exists from a previous generate
-if uploaded_file:
-    st.caption(f"DEBUG: just_generated={st.session_state.get('_just_generated')} | has_bytes={bool(st.session_state.get('preview_image_bytes'))} | filename={st.session_state.get('preview_filename')} | current={uploaded_file.name if uploaded_file else None}")
-if uploaded_file and not st.session_state.get('_just_generated') and \
+# Render stored preview from session state (persists across ArtBot reruns)
+if uploaded_file and \
         st.session_state.get('preview_image_bytes') and \
         st.session_state.get('preview_filename') == uploaded_file.name:
-    st.caption(f"DEBUG: rendering from session state | just_generated={st.session_state.get('_just_generated')} | has_bytes={bool(st.session_state.get('preview_image_bytes'))} | filename_match={st.session_state.get('preview_filename')==uploaded_file.name}")
     result = st.session_state['preview_result']
     color_data = st.session_state.get('preview_color_data')
     img_bytes = st.session_state['preview_image_bytes']
@@ -1939,9 +1797,6 @@ if uploaded_file and not st.session_state.get('_just_generated') and \
             st.metric("File Type", result['file_type'].title())
     if color_data:
         render_color_results(color_data, Path(uploaded_file.name).suffix.lower())
-
-# Reset just_generated so next rerun shows stored preview
-st.session_state['_just_generated'] = False
 
 # Footer
 st.markdown("---")
