@@ -405,31 +405,8 @@ class PreviewGenerator:
     
     def __init__(self):
         self.embroidery = EmbroideryConverter()
-        
-        # Check for available conversion libraries
-        try:
-            import cairosvg
-            self.cairosvg = cairosvg
-            self.has_cairosvg = True
-        except ImportError:
-            self.cairosvg = None
-            self.has_cairosvg = False
-        
-        try:
-            from pdf2image import convert_from_path
-            self.pdf2image_convert = convert_from_path
-            self.has_pdf2image = True
-        except ImportError:
-            self.pdf2image_convert = None
-            self.has_pdf2image = False
-
-        try:
-            import fitz  # PyMuPDF
-            self.fitz = fitz
-            self.has_fitz = True
-        except ImportError:
-            self.fitz = None
-            self.has_fitz = False
+        # Heavy libraries (cairosvg, fitz, pdf2image) are imported lazily
+        # inside each conversion method to minimize memory at idle
     
     def is_supported(self, filename):
         """Check if file format is supported"""
@@ -453,19 +430,18 @@ class PreviewGenerator:
 
     def _convert_svg_with_cairosvg(self, input_file, output_file):
         """Convert SVG to PNG using CairoSVG"""
-        if not self.has_cairosvg:
+        try:
+            import cairosvg
+        except ImportError:
             return False
-        
         try:
             with open(input_file, 'rb') as f:
                 svg_content = f.read()
-            
-            self.cairosvg.svg2png(
+            cairosvg.svg2png(
                 bytestring=svg_content,
                 write_to=output_file,
                 output_width=self.PREVIEW_MAX_WIDTH
             )
-            
             return os.path.exists(output_file) and os.path.getsize(output_file) > 0
         except Exception as e:
             st.warning(f"CairoSVG conversion failed: {str(e)}")
@@ -501,16 +477,17 @@ class PreviewGenerator:
 
     def _convert_with_fitz(self, input_file, output_file):
         """Convert PDF or SVG to PNG using PyMuPDF (fitz) - handles AI-native PDFs"""
-        if not self.has_fitz:
+        try:
+            import fitz
+        except ImportError:
             return False
         try:
-            doc = self.fitz.open(input_file)
+            doc = fitz.open(input_file)
             page = doc[0]
-            # Calculate scale to ensure minimum 1200px on longest side
             rect = page.rect
             longest = max(rect.width, rect.height)
-            scale = max(10, 1200 / longest)  # At least 10x, enough to hit 1200px
-            mat = self.fitz.Matrix(scale, scale)
+            scale = max(10, 1200 / longest)
+            mat = fitz.Matrix(scale, scale)
             pix = page.get_pixmap(matrix=mat, alpha=True)
             pix.save(output_file)
             doc.close()
@@ -579,7 +556,7 @@ class PreviewGenerator:
 
             try:
                 success = self._convert_svg_with_cairosvg(svg_tmp_path, output_file)
-                if not success and self.has_fitz:
+                if not success:
                     success = self._convert_with_fitz(svg_tmp_path, output_file)
                 return success
             finally:
@@ -645,9 +622,10 @@ class PreviewGenerator:
         elif ext == '.pdf' or ext == '.ai':
             # PDF/AI: fitz first, pdf2image as fallback
             success = self._convert_with_fitz(input_file, output_file)
-            if not success and self.has_pdf2image:
+            if not success:
                 try:
-                    pages = self.pdf2image_convert(input_file, first_page=1, last_page=1, dpi=150)
+                    from pdf2image import convert_from_path
+                    pages = convert_from_path(input_file, first_page=1, last_page=1, dpi=150)
                     if pages:
                         pages[0].save(output_file, 'PNG')
                         success = os.path.exists(output_file) and os.path.getsize(output_file) > 0
@@ -661,7 +639,7 @@ class PreviewGenerator:
                 success = self._convert_with_fitz(input_file, output_file)
             if not success:
                 success = self._convert_svg_with_cairosvg(input_file, output_file)
-            if not success and self.has_fitz:
+            if not success:
                 success = self._convert_with_fitz(input_file, output_file)
 
         elif ext == '.cdr':
@@ -692,11 +670,9 @@ class PreviewGenerator:
 # RASTER ANALYZER - Handles PNG/JPG/GIF/TIFF/BMP/WEBP uploads
 # ============================================================================
 
-@st.cache_resource
 def get_preview_generator():
     return PreviewGenerator()
 
-@st.cache_resource
 def get_color_extractor():
     return ColorExtractor()
 
