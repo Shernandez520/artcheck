@@ -1839,7 +1839,18 @@ if uploaded_file:
 
         # Store everything in session state OUTSIDE the spinner
         if result and _image_bytes:
-            st.session_state['preview_image_bytes'] = _image_bytes
+            # Downsize image for session state storage — max 1200px on longest side
+            # Full-res can be 20-30MB which kills free tier memory
+            import io
+            from PIL import Image as _PILResize
+            _img = _PILResize.open(io.BytesIO(_image_bytes))
+            _max = 1200
+            if max(_img.width, _img.height) > _max:
+                _ratio = _max / max(_img.width, _img.height)
+                _img = _img.resize((int(_img.width * _ratio), int(_img.height * _ratio)), _PILResize.LANCZOS)
+            _buf = io.BytesIO()
+            _img.save(_buf, format='PNG', optimize=True)
+            st.session_state['preview_image_bytes'] = _buf.getvalue()
             st.session_state['preview_result'] = result
             st.session_state['preview_color_data'] = color_data
             st.session_state['preview_filename'] = uploaded_file.name
