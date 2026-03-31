@@ -38,14 +38,20 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500&display=swap');
 
-    /* Page background — deep gradient mesh */
+    /* Page background — stronger gradient mesh */
     .stApp {
         background:
-            radial-gradient(ellipse at 20% 20%, rgba(99, 76, 178, 0.18) 0%, transparent 55%),
-            radial-gradient(ellipse at 80% 10%, rgba(56, 120, 200, 0.15) 0%, transparent 50%),
-            radial-gradient(ellipse at 60% 80%, rgba(180, 60, 120, 0.10) 0%, transparent 50%),
-            #0a0a0f;
+            radial-gradient(ellipse at 15% 15%, rgba(108, 79, 212, 0.35) 0%, transparent 45%),
+            radial-gradient(ellipse at 85% 5%, rgba(56, 120, 220, 0.28) 0%, transparent 40%),
+            radial-gradient(ellipse at 70% 85%, rgba(200, 50, 120, 0.20) 0%, transparent 45%),
+            radial-gradient(ellipse at 50% 50%, rgba(20, 10, 40, 0.8) 0%, transparent 70%),
+            #08080e;
         font-family: 'Inter', sans-serif;
+    }
+
+    /* Force background on all Streamlit wrappers */
+    .stApp > div, [data-testid="stAppViewContainer"] {
+        background: transparent !important;
     }
 
     /* Main content area */
@@ -1672,29 +1678,35 @@ preview_filename = st.session_state.get('preview_filename', '')
 
 if has_preview:
     st.markdown(f"""
-<div style="padding:1.25rem 0 1rem 0;">
-    <div style="font-family:'Syne',sans-serif;font-size:1.6rem;font-weight:700;color:#fff;letter-spacing:-0.02em;">
-        ArtCheck
-        <span style="font-size:0.85rem;font-weight:400;color:#555;margin-left:0.75rem;letter-spacing:0;font-family:'Inter',sans-serif;">{preview_filename}</span>
-    </div>
-    <div style="font-size:0.85rem;color:#7c5fd4;margin-top:0.3rem;font-family:'Inter',sans-serif;font-weight:500;">
-        ✦ Preview ready &nbsp;·&nbsp; Ask ArtBot about this file in the sidebar →
+<div style="padding:1.25rem 0 1rem 0;display:flex;align-items:center;gap:1rem;">
+    <svg width="32" height="32" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="14" cy="14" r="11" fill="#00B8D9" opacity="0.9"/><circle cx="26" cy="14" r="11" fill="#FF5630" opacity="0.9"/><circle cx="14" cy="26" r="11" fill="#FFAB00" opacity="0.9"/><circle cx="26" cy="26" r="11" fill="#36B37E" opacity="0.9"/></svg>
+    <div>
+        <div style="font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:700;color:#ffffff;letter-spacing:-0.02em;line-height:1;">
+            ArtCheck
+            <span style="font-size:0.8rem;font-weight:400;color:#aaa;margin-left:0.6rem;letter-spacing:0;font-family:'Inter',sans-serif;">{preview_filename}</span>
+        </div>
+        <div style="font-size:0.82rem;color:#a78bfa;margin-top:0.25rem;font-family:'Inter',sans-serif;font-weight:500;">
+            Preview ready &nbsp;·&nbsp; Ask ArtBot about this file in the sidebar &rarr;
+        </div>
     </div>
 </div>
-<hr style="border:none;border-top:1px solid rgba(255,255,255,0.07);margin-bottom:1.25rem;">
+<hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin-bottom:1.25rem;">
 """, unsafe_allow_html=True)
 else:
     st.markdown("""
-<div style="padding:2rem 0 1.5rem 0;">
-    <div style="font-family:'Syne',sans-serif;font-size:2.6rem;font-weight:800;color:#fff;letter-spacing:-0.04em;line-height:1;margin-bottom:0.65rem;">
-        ArtCheck
-    </div>
-    <div style="font-size:1rem;color:#666;font-weight:400;max-width:480px;line-height:1.6;font-family:'Inter',sans-serif;">
-        Drop a file. Get an instant preview, color breakdown, and production check —
-        no art department required.
+<div style="padding:2.5rem 0 1.75rem 0;display:flex;align-items:flex-start;gap:1.25rem;">
+    <svg width="56" height="56" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;margin-top:2px;"><circle cx="14" cy="14" r="11" fill="#00B8D9" opacity="0.9"/><circle cx="26" cy="14" r="11" fill="#FF5630" opacity="0.9"/><circle cx="14" cy="26" r="11" fill="#FFAB00" opacity="0.9"/><circle cx="26" cy="26" r="11" fill="#36B37E" opacity="0.9"/></svg>
+    <div>
+        <div style="font-family:'Syne',sans-serif;font-size:2.8rem;font-weight:800;color:#ffffff;letter-spacing:-0.04em;line-height:1;margin-bottom:0.6rem;">
+            ArtCheck
+        </div>
+        <div style="font-size:1.05rem;color:#c8c8e0;font-weight:400;max-width:480px;line-height:1.65;font-family:'Inter',sans-serif;">
+            Drop a file. Get an instant preview, color breakdown, and production check —
+            no art department required.
+        </div>
     </div>
 </div>
-<hr style="border:none;border-top:1px solid rgba(255,255,255,0.07);margin-bottom:1.25rem;">
+<hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin-bottom:1.25rem;">
 """, unsafe_allow_html=True)
 
 vector_formats = ".ai, .eps, .pdf, .svg, .cdr, .xcf"
