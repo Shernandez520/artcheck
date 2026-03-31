@@ -764,28 +764,30 @@ class RasterAnalyzer:
                 results['verdict'] = 'poor'
 
             # Generate warnings
-            if dpi <= 72:
-                results['warnings'].append("⚠️ 72 DPI detected — this file was likely saved from a website or screen capture")
+            # Only warn about low DPI if the image also lacks enough pixels — avoids confusing "72 DPI" 
+            # warning on files that are actually fine (high pixel count, just bad metadata)
+            if dpi <= 72 and results['verdict'] != 'good':
+                results['warnings'].append("⚠️ This file appears to be a low-resolution image, possibly saved from a website or screenshot.")
             if results['verdict'] == 'poor':
-                results['warnings'].append("❌ Resolution too low for most decoration methods — will print blurry")
+                results['warnings'].append("❌ This image is too small to print clearly. It will look blurry or pixelated in production.")
             elif results['verdict'] == 'marginal':
-                results['warnings'].append("⚠️ Marginal resolution — may be acceptable for DTG or small print sizes only")
+                results['warnings'].append("⚠️ This image may work for small print sizes, but quality isn't guaranteed. Check the print size table below.")
 
             if img.mode == 'RGB':
-                results['warnings'].append("⚠️ RGB color mode — will need conversion to CMYK for most print methods")
+                results['warnings'].append("⚠️ This file uses RGB color. Most print methods require CMYK — colors may shift in production.")
             elif img.mode == 'RGBA':
-                results['warnings'].append("ℹ️ Image has transparency (alpha channel)")
+                results['warnings'].append("ℹ️ This image has a transparent background.")
             elif img.mode == 'P':
-                results['warnings'].append("⚠️ Indexed/palette color mode — may have limited colors")
+                results['warnings'].append("⚠️ This file uses a limited color palette, which may affect print quality.")
 
             # Recommendations
             if results['verdict'] in ('poor', 'marginal'):
-                results['recommendations'].append("Ask the customer for the original vector file (.ai, .eps, .pdf) from their designer")
-                results['recommendations'].append("If no vector exists, ask for the highest-resolution version available (original camera photo, original design file)")
-                if dpi <= 72:
-                    results['recommendations'].append("Do NOT use this file — it was saved from a website at screen resolution")
+                results['recommendations'].append("Ask the customer for the original vector file (.ai, .eps, .pdf) from their designer — this is always the best option.")
+                results['recommendations'].append("If no vector file exists, ask for the largest/highest-quality version they have (original design file, not a screenshot or download).")
+                if dpi <= 72 and results['verdict'] != 'good':
+                    results['recommendations'].append("Do not use this file for production — request a replacement from the customer.")
             if img.mode == 'RGB':
-                results['recommendations'].append("Convert to CMYK in Illustrator or Photoshop before sending to production")
+                results['recommendations'].append("Have your art department convert to CMYK before sending to production.")
 
         except Exception as e:
             results['warnings'].append(f"Could not analyze image: {str(e)}")
@@ -802,25 +804,22 @@ def render_raster_results(analysis, filename):
 
     # Verdict banner
     if verdict == 'good':
-        st.markdown('''<div style="padding:12px;border-radius:8px;background:#1a6b3a;color:#fff;font-size:1rem;font-weight:bold;margin-bottom:12px;">✅ Production Ready — Resolution is sufficient</div>''', unsafe_allow_html=True)
+        st.markdown('''<div style="padding:12px;border-radius:8px;background:#1a6b3a;color:#fff;font-size:1rem;font-weight:bold;margin-bottom:12px;">✅ Production Ready — This image has enough detail for printing</div>''', unsafe_allow_html=True)
     elif verdict == 'marginal':
-        st.markdown('''<div style="padding:12px;border-radius:8px;background:#7d5a00;color:#fff;font-size:1rem;font-weight:bold;margin-bottom:12px;">⚠️ Marginal Quality — Use with caution</div>''', unsafe_allow_html=True)
+        st.markdown('''<div style="padding:12px;border-radius:8px;background:#7d5a00;color:#fff;font-size:1rem;font-weight:bold;margin-bottom:12px;">⚠️ Borderline Quality — May work for small print sizes only</div>''', unsafe_allow_html=True)
     else:
-        st.markdown('''<div style="padding:12px;border-radius:8px;background:#8b1a1a;color:#fff;font-size:1rem;font-weight:bold;margin-bottom:12px;">❌ Not Suitable for Production — Resolution too low</div>''', unsafe_allow_html=True)
+        st.markdown('''<div style="padding:12px;border-radius:8px;background:#8b1a1a;color:#fff;font-size:1rem;font-weight:bold;margin-bottom:12px;">❌ Not Suitable for Production — Image is too small or low quality</div>''', unsafe_allow_html=True)
 
     # Image stats
     col1, col2, col3 = st.columns(3)
     with col1:
-        w_in = round(w / dpi, 2) if dpi > 0 else "?"
-        h_in = round(h / dpi, 2) if dpi > 0 else "?"
         st.metric("Dimensions", f"{w} × {h} px")
-        st.caption(f'@ metadata DPI: {w_in}" x {h_in}"')
     with col2:
-        # Show actual inches at the embedded DPI, or at 300dpi if DPI is unreliable
+        # Show size at 300dpi if metadata DPI is unreliable
         display_dpi = dpi if dpi >= 150 else 300
         w_in = round(w / display_dpi, 2)
         h_in = round(h / display_dpi, 2)
-        dpi_label = f"Size @ {display_dpi}dpi" + (" (assumed)" if dpi < 150 else "")
+        dpi_label = f"Size @ {display_dpi}dpi" + (" (estimated)" if dpi < 150 else "")
         st.metric(dpi_label, f"{w_in}\" × {h_in}\"")
     with col3:
         st.metric("Color Mode", analysis.get('color_mode', 'Unknown'))
