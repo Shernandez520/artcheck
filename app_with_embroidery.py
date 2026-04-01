@@ -1799,20 +1799,121 @@ if st.session_state.get('preview_image_bytes') and st.session_state.get('preview
     st.markdown('<div class="success-box">✅ Preview generated successfully!</div>', unsafe_allow_html=True)
     col1, col2 = st.columns([2, 1])
     with col1:
-        from PIL import Image as _PIL
-        import io
-        st.image(_PIL.open(io.BytesIO(img_bytes)), use_container_width=True)
+        import base64, streamlit.components.v1 as _components
+        _b64 = base64.b64encode(img_bytes).decode()
+        _pz = """<!DOCTYPE html>
+<html><head><style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#111;overflow:hidden;width:100%;height:490px;}
+#viewport{width:100%;height:490px;overflow:hidden;position:relative;
+  background:#111;border-radius:8px;cursor:grab;}
+#viewport.grabbing{cursor:grabbing;}
+#img{position:absolute;top:50%;left:50%;transform-origin:center center;
+  max-width:none;display:block;user-select:none;pointer-events:none;}
+#controls{position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:10;}
+.ctrl-btn{background:#222;color:#aaa;border:1px solid #444;border-radius:4px;
+  padding:4px 10px;font-size:0.75rem;cursor:pointer;font-family:sans-serif;}
+.ctrl-btn:hover{background:#333;color:#fff;}
+</style></head><body>
+<div id="viewport">
+  <img id="img" src="data:image/png;base64,IMG_B64" draggable="false"/>
+  <div id="controls">
+    <button class="ctrl-btn" onclick="zoomIn()">+</button>
+    <button class="ctrl-btn" onclick="zoomOut()">-</button>
+    <button class="ctrl-btn" onclick="reset()">Reset</button>
+  </div>
+</div>
+<script>
+var vp=document.getElementById('viewport');
+var img=document.getElementById('img');
+var tx=0,ty=0,dragging=false,sx=0,sy=0,stx=0,sty=0;
+var vw=vp.offsetWidth||760, vh=vp.offsetHeight||490;
+var iw=img.naturalWidth||img.width||760, ih=img.naturalHeight||img.height||490;
+var scale=Math.min(vw/iw, vh/ih, 1);
+function apply(){
+  img.style.transform='translate(calc(-50% + '+tx+'px), calc(-50% + '+ty+'px)) scale('+scale+')';
+}
+img.onload=function(){
+  iw=img.naturalWidth; ih=img.naturalHeight;
+  scale=Math.min(vw/iw, vh/ih, 1);
+  apply();
+};
+apply();
+vp.addEventListener('wheel',function(e){
+  e.preventDefault();
+  var delta=e.deltaY<0?1.1:0.9;
+  scale=Math.min(8,Math.max(0.2,scale*delta));
+  apply();
+},{passive:false});
+vp.addEventListener('mousedown',function(e){
+  dragging=true;sx=e.clientX;sy=e.clientY;stx=tx;sty=ty;
+  vp.classList.add('grabbing');
+});
+window.addEventListener('mousemove',function(e){
+  if(!dragging)return;
+  tx=stx+(e.clientX-sx);ty=sty+(e.clientY-sy);apply();
+});
+window.addEventListener('mouseup',function(){dragging=false;vp.classList.remove('grabbing');});
+vp.addEventListener('touchstart',function(e){
+  if(e.touches.length===1){
+    dragging=true;sx=e.touches[0].clientX;sy=e.touches[0].clientY;stx=tx;sty=ty;
+  }
+},{passive:true});
+vp.addEventListener('touchmove',function(e){
+  if(dragging&&e.touches.length===1){
+    tx=stx+(e.touches[0].clientX-sx);ty=sty+(e.touches[0].clientY-sy);apply();
+  }
+},{passive:true});
+vp.addEventListener('touchend',function(){dragging=false;});
+var fitScale=scale;
+function zoomIn(){scale=Math.min(8,scale*1.25);apply();}
+function zoomOut(){scale=Math.max(0.1,scale/1.25);apply();}
+function reset(){scale=fitScale;tx=0;ty=0;apply();}
+</script>
+</body></html>""".replace("IMG_B64", _b64)
+        _components.html(_pz, height=495, scrolling=False)
+        st.caption("Your Preview")
     with col2:
-        st.markdown("**Preview Info**")
+        st.markdown("### Preview Info")
         if result.get('width'):
-            st.metric("Dimensions (px)", f"{result['width']} × {result['height']}")
             w_in = round(result['width'] / 300, 2)
             h_in = round(result['height'] / 300, 2)
-            st.metric("Size (inches)", f"{w_in}\" x {h_in}\"")
+            st.metric("Dimensions (px)", f"{result['width']} × {result['height']}")
+            st.metric("Size (inches)", f'{w_in}" x {h_in}"')
         if result.get('size_kb'):
             st.metric("File Size", f"{result['size_kb']} KB")
         if result.get('file_type'):
             st.metric("File Type", result['file_type'].title())
+        if result.get('embroidery_info'):
+            emb = result['embroidery_info']
+            st.markdown("### 🧵 Embroidery Info")
+            st.metric("Stitch Count", f"{emb['stitch_count']:,}")
+            st.metric("Thread Changes", emb['thread_changes'])
+            st.metric("Size", f"{emb['width_mm']}mm × {emb['height_mm']}mm")
+            thread_colors = emb.get('thread_colors', [])
+            unique_count = emb.get('unique_color_count', 0)
+            if thread_colors and unique_count > 0:
+                st.markdown(f"**Thread Colors** ({unique_count} unique)")
+                swatch_html = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">'
+                for c in thread_colors:
+                    border = "2px solid #888" if c["is_duplicate"] else "2px solid #444"
+                    swatch_html += (
+                        f'<div style="text-align:center;">'
+                        f'<div style="background:{c["hex"]};width:36px;height:36px;'
+                        f'border-radius:4px;border:{border};"></div>'
+                        f'<div style="font-size:0.65rem;color:#aaa;margin-top:2px;">{c["hex"]}</div>'
+                        f'</div>'
+                    )
+                swatch_html += '</div>'
+                st.markdown(swatch_html, unsafe_allow_html=True)
+        st.markdown("---")
+        st.download_button(
+            label="⬇️ Download Preview (PNG)",
+            data=img_bytes,
+            file_name=f"{st.session_state.get('preview_filename', 'preview').rsplit('.', 1)[0]}_preview.png",
+            mime="image/png",
+            use_container_width=True
+        )
     if color_data:
         stored_filename = st.session_state.get('preview_filename', '')
         render_color_results(color_data, Path(stored_filename).suffix.lower())
