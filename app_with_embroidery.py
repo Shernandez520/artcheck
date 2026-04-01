@@ -33,119 +33,63 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS — full visual overhaul
+# Custom CSS
 st.markdown("""
 <style>
-    /* Page background — stronger gradient mesh */
-    .stApp {
-        background:
-            radial-gradient(ellipse at 15% 15%, rgba(108, 79, 212, 0.35) 0%, transparent 45%),
-            radial-gradient(ellipse at 85% 5%, rgba(56, 120, 220, 0.28) 0%, transparent 40%),
-            radial-gradient(ellipse at 70% 85%, rgba(200, 50, 120, 0.20) 0%, transparent 45%),
-            radial-gradient(ellipse at 50% 50%, rgba(20, 10, 40, 0.8) 0%, transparent 70%),
-            #08080e;
-        font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    .main-header {
+        font-size: 3rem;
+        font-weight: bold;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.5rem;
     }
-
-    /* Force background on all Streamlit wrappers */
-    .stApp > div, [data-testid="stAppViewContainer"] {
-        background: transparent !important;
+    .tagline {
+        font-size: 1.2rem;
+        color: #666;
+        margin-bottom: 2rem;
     }
-
-    /* Main content area */
-    .main .block-container {
-        padding-top: 2rem;
-        max-width: 900px;
+    .success-box {
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        background: #d4edda;
+        border: 3px solid #28a745;
+        margin: 1rem 0;
+        color: #155724;
+        font-size: 1.1rem;
+        font-weight: bold;
     }
-
-    /* Sidebar */
-    section[data-testid="stSidebar"] {
-        background: rgba(12, 12, 20, 0.95) !important;
-        border-right: 1px solid rgba(255,255,255,0.06) !important;
+    .info-box {
+        padding: 1rem;
+        border-radius: 0.5rem;
+        background: #e3f2fd;
+        border-left: 4px solid #1976d2;
+        margin: 1rem 0;
+    }
+    .artbot-answer {
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        background: #f8f9fa;
+        border-left: 4px solid #667eea;
+        margin: 1rem 0;
+        font-size: 1rem;
+        line-height: 1.6;
+    }
+    .artbot-header {
+        color: #667eea;
+        font-weight: bold;
+        font-size: 1.1rem;
+        margin-bottom: 0.5rem;
     }
     section[data-testid="stSidebar"] * {
         font-size: 0.95rem !important;
-        font-family: -apple-system,'Segoe UI',system-ui,sans-serif !important;
     }
-    section[data-testid="stSidebar"] .stButton button { font-size: 0.95rem !important; }
-    section[data-testid="stSidebar"] .stTextInput input { font-size: 0.95rem !important; }
-
-    /* Headings */
-    h1, h2, h3 { font-family: 'Syne', sans-serif !important; }
-
-    /* File uploader */
-    [data-testid="stFileUploader"] {
-        background: rgba(255,255,255,0.03) !important;
-        border: 1px solid rgba(255,255,255,0.08) !important;
-        border-radius: 12px !important;
-        padding: 0.5rem !important;
-        transition: border-color 0.2s;
+    section[data-testid="stSidebar"] .stButton button {
+        font-size: 0.95rem !important;
     }
-    [data-testid="stFileUploader"]:hover {
-        border-color: rgba(120, 100, 220, 0.5) !important;
+    section[data-testid="stSidebar"] .stTextInput input {
+        font-size: 0.95rem !important;
     }
-
-    /* Buttons */
-    .stButton > button {
-        border-radius: 8px !important;
-        font-family: -apple-system,'Segoe UI',system-ui,sans-serif !important;
-        font-weight: 500 !important;
-        letter-spacing: 0.01em !important;
-        transition: all 0.2s !important;
-    }
-    .stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #6c4fd4 0%, #4a7fd4 100%) !important;
-        border: none !important;
-        color: #fff !important;
-    }
-    .stButton > button[kind="primary"]:hover {
-        opacity: 0.9 !important;
-        transform: translateY(-1px) !important;
-        box-shadow: 0 4px 20px rgba(108, 79, 212, 0.4) !important;
-    }
-
-    /* Metrics */
-    [data-testid="stMetric"] {
-        background: rgba(255,255,255,0.03) !important;
-        border: 1px solid rgba(255,255,255,0.07) !important;
-        border-radius: 10px !important;
-        padding: 0.75rem 1rem !important;
-    }
-
-    /* Info/warning boxes */
-    .stAlert {
-        border-radius: 10px !important;
-        border: 1px solid rgba(255,255,255,0.08) !important;
-        background: rgba(255,255,255,0.03) !important;
-    }
-
-    /* Success box */
-    .success-box {
-        padding: 1rem 1.25rem;
-        border-radius: 10px;
-        background: rgba(40, 167, 69, 0.12);
-        border: 1px solid rgba(40, 167, 69, 0.35);
-        margin: 1rem 0;
-        color: #6fcf8a;
-        font-size: 1rem;
-        font-weight: 600;
-        font-family: -apple-system,'Segoe UI',system-ui,sans-serif;
-    }
-
-    /* Dividers */
-    hr { border-color: rgba(255,255,255,0.07) !important; }
-
-    /* Scrollbar */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
-
-    /* Keep unused classes for safety */
-    .main-header { font-size: 3rem; font-weight: bold; }
-    .tagline { font-size: 1.2rem; color: #999; }
-    .info-box { padding: 1rem; border-radius: 8px; background: rgba(25,118,210,0.1); border-left: 4px solid #1976d2; }
-    .artbot-answer { padding: 1.5rem; border-radius: 8px; background: rgba(255,255,255,0.03); border-left: 4px solid #6c4fd4; }
-    .artbot-header { color: #8b7cf8; font-weight: bold; font-size: 1.1rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1670,42 +1614,26 @@ with st.sidebar:
 # FILE UPLOAD SECTION
 # ============================================================================
 
-# Header — adapts based on whether a preview has been generated
-has_preview = bool(st.session_state.get('preview_image_bytes'))
-preview_filename = st.session_state.get('preview_filename', '')
+st.markdown("""
+<div style="padding:2rem 0 1.5rem 0;">
+    <div style="font-size:2.8rem;font-weight:800;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1.1;margin-bottom:0.5rem;">
+        🎨 ArtCheck
+    </div>
+    <div style="font-size:1.25rem;color:#ccc;font-weight:400;margin-bottom:1rem;">
+        Instant art file screening for promotional products professionals.
+    </div>
+    <div style="font-size:0.95rem;color:#888;max-width:720px;line-height:1.7;">
+        Built for sales reps and customer service teams who need quick answers on art files — 
+        without waiting on the art department. Upload any vector, embroidery, or image file 
+        to get an instant preview, color analysis, and production suitability check. 
+        Ask ArtBot in the sidebar for expert guidance on file requirements, decoration methods, 
+        and what to tell your customer.
+    </div>
+</div>
+<hr style="border:none;border-top:1px solid #333;margin-bottom:1.5rem;">
+""", unsafe_allow_html=True)
 
-if has_preview:
-    st.markdown(f"""
-<div style="padding:1.25rem 0 1rem 0;display:flex;align-items:center;gap:1rem;">
-    <svg width="32" height="32" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="14" cy="14" r="11" fill="#00B8D9" opacity="0.9"/><circle cx="26" cy="14" r="11" fill="#FF5630" opacity="0.9"/><circle cx="14" cy="26" r="11" fill="#FFAB00" opacity="0.9"/><circle cx="26" cy="26" r="11" fill="#36B37E" opacity="0.9"/></svg>
-    <div>
-        <div style="font-family:-apple-system,'Segoe UI',system-ui,sans-serif;font-size:1.5rem;font-weight:700;color:#ffffff;letter-spacing:-0.02em;line-height:1;">
-            ArtCheck
-            <span style="font-size:0.8rem;font-weight:400;color:#aaa;margin-left:0.6rem;letter-spacing:0;font-family:-apple-system,'Segoe UI',system-ui,sans-serif;">{preview_filename}</span>
-        </div>
-        <div style="font-size:0.82rem;color:#a78bfa;margin-top:0.25rem;font-family:-apple-system,'Segoe UI',system-ui,sans-serif;font-weight:500;">
-            Preview ready &nbsp;·&nbsp; Ask ArtBot about this file in the sidebar &rarr;
-        </div>
-    </div>
-</div>
-<hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin-bottom:1.25rem;">
-""", unsafe_allow_html=True)
-else:
-    st.markdown("""
-<div style="padding:2.5rem 0 1.75rem 0;display:flex;align-items:flex-start;gap:1.25rem;">
-    <svg width="56" height="56" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;margin-top:2px;"><circle cx="14" cy="14" r="11" fill="#00B8D9" opacity="0.9"/><circle cx="26" cy="14" r="11" fill="#FF5630" opacity="0.9"/><circle cx="14" cy="26" r="11" fill="#FFAB00" opacity="0.9"/><circle cx="26" cy="26" r="11" fill="#36B37E" opacity="0.9"/></svg>
-    <div>
-        <div style="font-family:-apple-system,'Segoe UI',system-ui,sans-serif;font-size:2.8rem;font-weight:800;color:#ffffff;letter-spacing:-0.04em;line-height:1;margin-bottom:0.6rem;">
-            ArtCheck
-        </div>
-        <div style="font-size:1.05rem;color:#c8c8e0;font-weight:400;max-width:480px;line-height:1.65;font-family:-apple-system,'Segoe UI',system-ui,sans-serif;">
-            Drop a file. Get an instant preview, color breakdown, and production check —
-            no art department required.
-        </div>
-    </div>
-</div>
-<hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin-bottom:1.25rem;">
-""", unsafe_allow_html=True)
+st.markdown("## 📁 Upload Your File")
 
 vector_formats = ".ai, .eps, .pdf, .svg, .cdr, .xcf"
 embroidery_formats = ".dst, .pes, .exp, .jef, .vp3, .xxx, .u01"
