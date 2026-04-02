@@ -15,7 +15,7 @@ import tempfile
 import json
 
 def inject_ga():
-    pass  # GA4 not supported on Streamlit Cloud free tier — use Streamlit's built-in analytics instead
+    pass  # GA4 not supported on Streamlit Cloud free tier
 
 st.set_page_config(
     page_title="ArtCheck - Preview Generator",
