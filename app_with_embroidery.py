@@ -15,27 +15,7 @@ import tempfile
 import json
 
 def inject_ga():
-    GA_ID = "G-E1711T2D9R"
-    GA_SCRIPT = f"""<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id={GA_ID}"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){{dataLayer.push(arguments);}}
-  gtag('js', new Date());
-  gtag('config', '{GA_ID}');
-</script>"""
-    # Patch Streamlit's index.html directly — the only reliable method on Streamlit Cloud
-    import pathlib
-    import streamlit
-    streamlit_path = pathlib.Path(streamlit.__file__).parent
-    index_path = streamlit_path / "static" / "index.html"
-    try:
-        html = index_path.read_text()
-        if GA_ID not in html:
-            html = html.replace("<head>", f"<head>\n{GA_SCRIPT}")
-            index_path.write_text(html)
-    except Exception:
-        pass  # Fail silently — don't crash the app if this doesn't work
+    pass  # GA4 not supported on Streamlit Cloud free tier — use Streamlit's built-in analytics instead
 
 st.set_page_config(
     page_title="ArtCheck - Preview Generator",
