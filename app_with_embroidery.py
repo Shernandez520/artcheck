@@ -1685,22 +1685,28 @@ if uploaded_file:
     size_limit_mb = 40 if is_psd else 100
 
     if file_size_mb > size_limit_mb:
-        st.error(f"### ⚠️ File Too Large")
+        st.error(f"### ⚠️ File Too Large to Preview")
         if is_psd:
             st.warning(f"""
-**This PSD is {file_size_mb:.1f} MB — too large to process (limit: {size_limit_mb} MB).**
+**This Photoshop file is {file_size_mb:.1f} MB — too large for ArtCheck to process.**
 
-PSD files contain all layer data which makes them very heavy. To use this file in ArtCheck:
+This is a large, layered Photoshop file. ArtCheck can't open it, but your **art department can**.
 
-- **Flatten the image** in Photoshop (Image → Flatten Image) and re-save
-- **Export as PDF** (File → Save As → Photoshop PDF) — much smaller
-- **Export as PNG or JPG** if you just need a preview check
+**What to tell your customer:**
+
+> "Thanks for sending this! Our art team will review your Photoshop file directly. 
+> For faster turnaround on future orders, a flattened PDF or high-res JPG/PNG works best."
+
+**What to tell your art department:**
+
+> "Customer sent a large PSD ({file_size_mb:.1f} MB). Passing it along for review — 
+> can you confirm it's usable and send me a preview?"
             """)
         else:
             st.warning(f"""
-**This file is {file_size_mb:.1f} MB — too large to process (limit: {size_limit_mb} MB).**
+**This file is {file_size_mb:.1f} MB — too large for ArtCheck to process.**
 
-Please try a smaller version of the file, or export at a lower resolution.
+Try asking your customer for a smaller version, or pass this file directly to your art department.
             """)
         st.stop()
 
