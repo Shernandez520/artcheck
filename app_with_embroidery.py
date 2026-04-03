@@ -388,7 +388,7 @@ class EmbroideryConverter:
 class PreviewGenerator:
     """Handles conversion of vector files to PNG previews - CLOUD OPTIMIZED"""
     
-    SUPPORTED_FORMATS = ['.ai', '.eps', '.pdf', '.svg', '.cdr', '.xcf']
+    SUPPORTED_FORMATS = ['.ai', '.eps', '.pdf', '.svg', '.cdr', '.xcf', '.psd']
     DEFAULT_DPI = 300
     PREVIEW_MAX_WIDTH = 1200
     PREVIEW_MAX_HEIGHT = 1200
@@ -573,6 +573,8 @@ class PreviewGenerator:
             return 'Vector (AI)'
         elif ext == '.pdf':
             return 'Vector (PDF)'
+        elif ext == '.psd':
+            return 'Photoshop (PSD)'
         return 'Vector'
 
     def generate_preview(self, input_file, bg_type='auto'):
@@ -634,6 +636,19 @@ class PreviewGenerator:
 
         elif ext == '.cdr':
             success = self._convert_cdr(input_file, output_file)
+
+        elif ext == '.psd':
+            # PSD: fitz (PyMuPDF) handles Photoshop files natively
+            success = self._convert_with_fitz(input_file, output_file)
+            if not success:
+                # Fallback: try opening as image with Pillow
+                try:
+                    from PIL import Image as _PilPSD
+                    img_psd = _PilPSD.open(input_file)
+                    img_psd.save(output_file, 'PNG')
+                    success = os.path.exists(output_file) and os.path.getsize(output_file) > 0
+                except Exception as e:
+                    st.warning(f"PSD conversion failed: {str(e)}")
 
         if success and os.path.exists(output_file):
             self._apply_background(output_file, bg_type)
@@ -1625,7 +1640,7 @@ st.markdown("""
 
 st.markdown("## 📁 Upload Your File")
 
-vector_formats = ".ai, .eps, .pdf, .svg, .cdr, .xcf"
+vector_formats = ".ai, .eps, .pdf, .svg, .cdr, .xcf, .psd"
 embroidery_formats = ".dst, .pes, .exp, .jef, .vp3, .xxx, .u01"
 
 raster_formats = ".png, .jpg, .gif, .tiff, .bmp, .webp"
@@ -1634,7 +1649,7 @@ st.info(f"**Supported:** Vector files ({vector_formats}) | Embroidery files ({em
 uploaded_file = st.file_uploader(
     "🎨 Drag and drop your file here or click to browse",
     key=f"uploader_{st.session_state.get('file_uploader_key', 0)}",
-    type=['ai', 'eps', 'pdf', 'svg', 'cdr', 'xcf', 'indd', 'dst', 'pes', 'exp', 'jef', 'vp3', 'xxx', 'u01',
+    type=['ai', 'eps', 'pdf', 'svg', 'cdr', 'xcf', 'psd', 'indd', 'dst', 'pes', 'exp', 'jef', 'vp3', 'xxx', 'u01',
           'png', 'jpg', 'jpeg', 'gif', 'tiff', 'tif', 'bmp', 'webp'],
     help="Supports vector, embroidery, and raster image files up to 200MB"
 )
