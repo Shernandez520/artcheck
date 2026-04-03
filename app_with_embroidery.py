@@ -1651,7 +1651,7 @@ uploaded_file = st.file_uploader(
     key=f"uploader_{st.session_state.get('file_uploader_key', 0)}",
     type=['ai', 'eps', 'pdf', 'svg', 'cdr', 'xcf', 'psd', 'indd', 'dst', 'pes', 'exp', 'jef', 'vp3', 'xxx', 'u01',
           'png', 'jpg', 'jpeg', 'gif', 'tiff', 'tif', 'bmp', 'webp'],
-    help="Supports vector, embroidery, and raster image files up to 200MB"
+    help="Vector/embroidery/raster files up to 100MB · PSD files up to 40MB"
 )
 
 if uploaded_file:
@@ -1679,7 +1679,32 @@ if uploaded_file:
         """)
         st.stop()
 
-    col_succ, col_clear = st.columns([4, 1])
+    # File size check — free tier memory limit
+    file_size_mb = uploaded_file.size / 1024 / 1024
+    is_psd = uploaded_file.name.lower().endswith('.psd')
+    size_limit_mb = 40 if is_psd else 100
+
+    if file_size_mb > size_limit_mb:
+        st.error(f"### ⚠️ File Too Large")
+        if is_psd:
+            st.warning(f"""
+**This PSD is {file_size_mb:.1f} MB — too large to process (limit: {size_limit_mb} MB).**
+
+PSD files contain all layer data which makes them very heavy. To use this file in ArtCheck:
+
+- **Flatten the image** in Photoshop (Image → Flatten Image) and re-save
+- **Export as PDF** (File → Save As → Photoshop PDF) — much smaller
+- **Export as PNG or JPG** if you just need a preview check
+            """)
+        else:
+            st.warning(f"""
+**This file is {file_size_mb:.1f} MB — too large to process (limit: {size_limit_mb} MB).**
+
+Please try a smaller version of the file, or export at a lower resolution.
+            """)
+        st.stop()
+
+
     with col_succ:
         st.success(f"✓ Uploaded: **{uploaded_file.name}** ({uploaded_file.size / 1024 / 1024:.2f} MB)")
     with col_clear:
