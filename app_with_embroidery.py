@@ -15,7 +15,17 @@ import tempfile
 import json
 
 def inject_ga():
-    pass  # GA4 not supported on Streamlit Cloud free tier
+    GA_ID = "G-E1711T2D9R"
+    import streamlit.components.v1 as _ga_components
+    _ga_components.html(f"""
+        <script async src="https://www.googletagmanager.com/gtag/js?id={GA_ID}"></script>
+        <script>
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){{dataLayer.push(arguments);}}
+            gtag('js', new Date());
+            gtag('config', '{GA_ID}');
+        </script>
+    """, height=0, scrolling=False)
 
 st.set_page_config(
     page_title="ArtCheck - Preview Generator",
@@ -388,7 +398,7 @@ class EmbroideryConverter:
 class PreviewGenerator:
     """Handles conversion of vector files to PNG previews - CLOUD OPTIMIZED"""
     
-    SUPPORTED_FORMATS = ['.ai', '.eps', '.pdf', '.svg', '.cdr', '.xcf', '.psd']
+    SUPPORTED_FORMATS = ['.ai', '.eps', '.pdf', '.svg', '.cdr', '.xcf']
     DEFAULT_DPI = 300
     PREVIEW_MAX_WIDTH = 1200
     PREVIEW_MAX_HEIGHT = 1200
@@ -573,8 +583,6 @@ class PreviewGenerator:
             return 'Vector (AI)'
         elif ext == '.pdf':
             return 'Vector (PDF)'
-        elif ext == '.psd':
-            return 'Photoshop (PSD)'
         return 'Vector'
 
     def generate_preview(self, input_file, bg_type='auto'):
@@ -636,19 +644,6 @@ class PreviewGenerator:
 
         elif ext == '.cdr':
             success = self._convert_cdr(input_file, output_file)
-
-        elif ext == '.psd':
-            # PSD: fitz (PyMuPDF) handles Photoshop files natively
-            success = self._convert_with_fitz(input_file, output_file)
-            if not success:
-                # Fallback: try opening as image with Pillow
-                try:
-                    from PIL import Image as _PilPSD
-                    img_psd = _PilPSD.open(input_file)
-                    img_psd.save(output_file, 'PNG')
-                    success = os.path.exists(output_file) and os.path.getsize(output_file) > 0
-                except Exception as e:
-                    st.warning(f"PSD conversion failed: {str(e)}")
 
         if success and os.path.exists(output_file):
             self._apply_background(output_file, bg_type)
@@ -1640,7 +1635,7 @@ st.markdown("""
 
 st.markdown("## 📁 Upload Your File")
 
-vector_formats = ".ai, .eps, .pdf, .svg, .cdr, .xcf, .psd"
+vector_formats = ".ai, .eps, .pdf, .svg, .cdr, .xcf"
 embroidery_formats = ".dst, .pes, .exp, .jef, .vp3, .xxx, .u01"
 
 raster_formats = ".png, .jpg, .gif, .tiff, .bmp, .webp"
@@ -1649,9 +1644,9 @@ st.info(f"**Supported:** Vector files ({vector_formats}) | Embroidery files ({em
 uploaded_file = st.file_uploader(
     "🎨 Drag and drop your file here or click to browse",
     key=f"uploader_{st.session_state.get('file_uploader_key', 0)}",
-    type=['ai', 'eps', 'pdf', 'svg', 'cdr', 'xcf', 'psd', 'indd', 'dst', 'pes', 'exp', 'jef', 'vp3', 'xxx', 'u01',
+    type=['ai', 'eps', 'pdf', 'svg', 'cdr', 'xcf', 'indd', 'dst', 'pes', 'exp', 'jef', 'vp3', 'xxx', 'u01',
           'png', 'jpg', 'jpeg', 'gif', 'tiff', 'tif', 'bmp', 'webp'],
-    help="Vector/embroidery/raster files up to 100MB · PSD files up to 40MB"
+    help="Supports vector, embroidery, and raster image files up to 200MB"
 )
 
 if uploaded_file:
@@ -1677,37 +1672,6 @@ if uploaded_file:
     
         Then upload the exported file to ArtCheck!
         """)
-        st.stop()
-
-    # File size check — free tier memory limit
-    file_size_mb = uploaded_file.size / 1024 / 1024
-    is_psd = uploaded_file.name.lower().endswith('.psd')
-    size_limit_mb = 40 if is_psd else 100
-
-    if file_size_mb > size_limit_mb:
-        st.error(f"### ⚠️ File Too Large to Preview")
-        if is_psd:
-            st.warning(f"""
-**This Photoshop file is {file_size_mb:.1f} MB — too large for ArtCheck to process.**
-
-This is a large, layered Photoshop file. ArtCheck can't open it, but your **art department can**.
-
-**What to tell your customer:**
-
-> "Thanks for sending this! Our art team will review your Photoshop file directly. 
-> For faster turnaround on future orders, a flattened PDF or high-res JPG/PNG works best."
-
-**What to tell your art department:**
-
-> "Customer sent a large PSD ({file_size_mb:.1f} MB). Passing it along for review — 
-> can you confirm it's usable and send me a preview?"
-            """)
-        else:
-            st.warning(f"""
-**This file is {file_size_mb:.1f} MB — too large for ArtCheck to process.**
-
-Try asking your customer for a smaller version, or pass this file directly to your art department.
-            """)
         st.stop()
 
     col_succ, col_clear = st.columns([4, 1])
