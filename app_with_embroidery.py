@@ -1860,10 +1860,15 @@ Try asking your customer for a smaller version, or pass this file directly to yo
                 _file_bytes = uploaded_file.getvalue()
                 tmp_file.write(_file_bytes)
                 tmp_path = tmp_file.name
-            # Store original bytes for vector PDF export
-            st.session_state['_uploaded_bytes'] = _file_bytes
             st.session_state['vector_pdf_bytes'] = None
             st.session_state['vector_pdf_error'] = None
+
+            # Store original file bytes for vector PDF export ONLY for small vector files
+            stored_ext = Path(uploaded_file.name).suffix.lower()
+            if stored_ext in ['.ai', '.eps', '.svg', '.cdr'] and len(_file_bytes) < 10 * 1024 * 1024:
+                st.session_state['_uploaded_bytes'] = _file_bytes
+            else:
+                st.session_state.pop('_uploaded_bytes', None)
 
             generator = get_preview_generator()
             result = generator.generate_preview(tmp_path, bg_type)
