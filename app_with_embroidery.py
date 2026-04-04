@@ -1789,7 +1789,7 @@ Try asking your customer for a smaller version, or pass this file directly to yo
             """)
         st.stop()
 
-
+    col_succ, col_clear = st.columns([4, 1])
     with col_succ:
         st.success(f"✓ Uploaded: **{uploaded_file.name}** ({uploaded_file.size / 1024 / 1024:.2f} MB)")
     with col_clear:
