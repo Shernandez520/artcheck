@@ -437,6 +437,82 @@ class PreviewGenerator:
             st.warning(f"CairoSVG conversion failed: {str(e)}")
             return False
 
+    def generate_vector_pdf(self, input_file):
+        """
+        Convert a non-PDF vector file to a vector PDF preserving paths.
+        Returns (pdf_bytes, error_message) — pdf_bytes is None on failure.
+        """
+        ext = Path(input_file).suffix.lower()
+        output_pdf = tempfile.mktemp(suffix='.pdf')
+
+        try:
+            if ext == '.ai':
+                # AI files are already PDF internally — just read as-is
+                with open(input_file, 'rb') as f:
+                    return f.read(), None
+
+            elif ext == '.eps':
+                # Ghostscript: EPS → PDF preserving vectors
+                cmd = [
+                    'gs', '-dNOPAUSE', '-dBATCH', '-dSAFER',
+                    '-sDEVICE=pdfwrite',
+                    '-dEPSCrop',
+                    '-dCompatibilityLevel=1.4',
+                    f'-sOutputFile={output_pdf}',
+                    input_file
+                ]
+                result = subprocess.run(cmd, capture_output=True, timeout=30)
+                if result.returncode == 0 and os.path.exists(output_pdf):
+                    with open(output_pdf, 'rb') as f:
+                        return f.read(), None
+                return None, "Ghostscript conversion failed"
+
+            elif ext == '.svg':
+                # CairoSVG: SVG → PDF preserving vectors
+                try:
+                    import cairosvg
+                    with open(input_file, 'rb') as f:
+                        svg_content = f.read()
+                    cairosvg.svg2pdf(bytestring=svg_content, write_to=output_pdf)
+                    if os.path.exists(output_pdf):
+                        with open(output_pdf, 'rb') as f:
+                            return f.read(), None
+                    return None, "CairoSVG PDF output failed"
+                except ImportError:
+                    return None, "CairoSVG not available"
+
+            elif ext == '.cdr':
+                # CDR → SVG via cdr2xhtml → PDF via CairoSVG
+                svg_tmp = tempfile.mktemp(suffix='.svg')
+                try:
+                    r = subprocess.run(
+                        ['cdr2xhtml', input_file],
+                        capture_output=True, timeout=30
+                    )
+                    if r.returncode == 0 and r.stdout:
+                        with open(svg_tmp, 'w') as f:
+                            f.write(r.stdout.decode('utf-8', errors='ignore'))
+                        import cairosvg
+                        with open(svg_tmp, 'rb') as f:
+                            svg_content = f.read()
+                        cairosvg.svg2pdf(bytestring=svg_content, write_to=output_pdf)
+                        if os.path.exists(output_pdf):
+                            with open(output_pdf, 'rb') as f:
+                                return f.read(), None
+                    return None, "CDR conversion failed"
+                finally:
+                    if os.path.exists(svg_tmp):
+                        os.unlink(svg_tmp)
+
+            else:
+                return None, f"Vector PDF export not supported for {ext} files"
+
+        except Exception as e:
+            return None, str(e)
+        finally:
+            if os.path.exists(output_pdf):
+                os.unlink(output_pdf)
+
     def _convert_eps_with_ghostscript(self, input_file, output_file):
         """Convert EPS to PNG using Ghostscript"""
         try:
@@ -1663,6 +1739,9 @@ if uploaded_file:
         st.session_state.pop('preview_color_data', None)
         st.session_state.pop('preview_filename', None)
         st.session_state.pop('artbot_file_context', None)
+        st.session_state.pop('_uploaded_bytes', None)
+        st.session_state.pop('vector_pdf_bytes', None)
+        st.session_state.pop('vector_pdf_error', None)
 
     # Check for InDesign files
     if uploaded_file.name.lower().endswith('.indd'):
@@ -1778,8 +1857,13 @@ Try asking your customer for a smaller version, or pass this file directly to yo
     if st.button("🚀 Generate Preview", use_container_width=True, type="primary"):
         with st.spinner("Generating preview..."):
             with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp_file:
-                tmp_file.write(uploaded_file.getvalue())
+                _file_bytes = uploaded_file.getvalue()
+                tmp_file.write(_file_bytes)
                 tmp_path = tmp_file.name
+            # Store original bytes for vector PDF export
+            st.session_state['_uploaded_bytes'] = _file_bytes
+            st.session_state['vector_pdf_bytes'] = None
+            st.session_state['vector_pdf_error'] = None
 
             generator = get_preview_generator()
             result = generator.generate_preview(tmp_path, bg_type)
@@ -1950,6 +2034,46 @@ function reset(){scale=fitScale;tx=0;ty=0;apply();}
             mime="image/png",
             use_container_width=True
         )
+
+        # Vector PDF export — for non-PDF vector files
+        stored_filename = st.session_state.get('preview_filename', '')
+        stored_ext = Path(stored_filename).suffix.lower()
+        if stored_ext in ['.ai', '.eps', '.svg', '.cdr']:
+            if 'vector_pdf_bytes' not in st.session_state:
+                st.session_state['vector_pdf_bytes'] = None
+                st.session_state['vector_pdf_error'] = None
+
+            if st.button("📄 Export as Vector PDF", use_container_width=True,
+                        help="Convert to PDF preserving vector paths — suitable for production"):
+                with st.spinner("Converting to vector PDF..."):
+                    # Re-process the original uploaded file
+                    uploaded = st.session_state.get('_uploaded_bytes')
+                    orig_ext = stored_ext
+                    if uploaded:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=orig_ext) as tmp:
+                            tmp.write(uploaded)
+                            tmp_path = tmp.name
+                        try:
+                            gen = get_preview_generator()
+                            pdf_bytes, err = gen.generate_vector_pdf(tmp_path)
+                            st.session_state['vector_pdf_bytes'] = pdf_bytes
+                            st.session_state['vector_pdf_error'] = err
+                        finally:
+                            if os.path.exists(tmp_path):
+                                os.unlink(tmp_path)
+                    else:
+                        st.session_state['vector_pdf_error'] = "Original file no longer available — please re-upload."
+
+            if st.session_state.get('vector_pdf_bytes'):
+                st.download_button(
+                    label="⬇️ Download Vector PDF",
+                    data=st.session_state['vector_pdf_bytes'],
+                    file_name=f"{stored_filename.rsplit('.', 1)[0]}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+            elif st.session_state.get('vector_pdf_error'):
+                st.error(f"PDF export failed: {st.session_state['vector_pdf_error']}")
     if color_data:
         stored_filename = st.session_state.get('preview_filename', '')
         render_color_results(color_data, Path(stored_filename).suffix.lower())
