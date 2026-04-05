@@ -1916,6 +1916,14 @@ function reset(){scale=fitScale;tx=0;ty=0;apply();}
             mime="image/png",
             use_container_width=True
         )
+        if st.button("🔄 Upload New File", use_container_width=True):
+            st.session_state.pop('preview_image_bytes', None)
+            st.session_state.pop('preview_result', None)
+            st.session_state.pop('preview_color_data', None)
+            st.session_state.pop('preview_filename', None)
+            st.session_state.pop('artbot_file_context', None)
+            st.session_state['file_uploader_key'] = st.session_state.get('file_uploader_key', 0) + 1
+            st.rerun()
     if color_data:
         stored_filename = st.session_state.get('preview_filename', '')
         render_color_results(color_data, Path(stored_filename).suffix.lower())
