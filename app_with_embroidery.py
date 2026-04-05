@@ -1529,7 +1529,9 @@ with st.sidebar:
         st.session_state.artbot_history.append({"role": "user", "content": question})
         try:
             import anthropic
-            client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+            import os
+            api_key = os.environ.get("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
+            client = anthropic.Anthropic(api_key=api_key)
             full_response = ""
             with client.messages.stream(
                 model="claude-sonnet-4-20250514",
