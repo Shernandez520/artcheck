@@ -1530,7 +1530,13 @@ with st.sidebar:
         try:
             import anthropic
             import os
-            api_key = os.environ.get("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
+            import os
+            api_key = os.environ.get("ANTHROPIC_API_KEY")
+            if not api_key:
+                try:
+                    api_key = st.secrets.get("ANTHROPIC_API_KEY")
+                except Exception:
+                    pass
             client = anthropic.Anthropic(api_key=api_key)
             full_response = ""
             with client.messages.stream(
