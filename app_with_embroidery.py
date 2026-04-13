@@ -1539,14 +1539,25 @@ with st.sidebar:
                     pass
             client = anthropic.Anthropic(api_key=api_key)
             full_response = ""
-            with client.messages.stream(
-                model="claude-sonnet-4-20250514",
-                max_tokens=1000,
-                system=build_artbot_system_prompt(),
-                messages=st.session_state.artbot_history.copy()
-            ) as stream:
-                for text in stream.text_stream:
-                    full_response += text
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    with client.messages.stream(
+                        model="claude-sonnet-4-20250514",
+                        max_tokens=1000,
+                        system=build_artbot_system_prompt(),
+                        messages=st.session_state.artbot_history.copy()
+                    ) as stream:
+                        for text in stream.text_stream:
+                            full_response += text
+                    break
+                except Exception as retry_err:
+                    if attempt < max_retries - 1 and "overloaded" in str(retry_err).lower():
+                        import time
+                        time.sleep(2)
+                        full_response = ""
+                        continue
+                    raise retry_err
             st.session_state.artbot_history.append({"role": "assistant", "content": full_response})
         except Exception as e:
             st.session_state.artbot_history.append({"role": "assistant", "content": f"⚠️ Error: {str(e)}"})
