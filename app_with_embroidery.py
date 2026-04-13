@@ -428,6 +428,29 @@ class PreviewGenerator:
         except Exception:
             return False
 
+    def _pdf_has_only_raster(self, input_file):
+        """Detect if a PDF contains only raster images with no vector paths"""
+        try:
+            import fitz
+            doc = fitz.open(input_file)
+            total_pages = len(doc)
+            vector_path_count = 0
+            raster_image_count = 0
+            for page in doc:
+                # Count vector paths
+                paths = page.get_drawings()
+                vector_path_count += len(paths)
+                # Count raster images
+                images = page.get_images()
+                raster_image_count += len(images)
+            doc.close()
+            # If there are images and very few or no vector paths, it's raster-in-PDF
+            if raster_image_count > 0 and vector_path_count < 3:
+                return True, raster_image_count
+            return False, 0
+        except Exception:
+            return False, 0
+
     def _convert_svg_with_cairosvg(self, input_file, output_file):
         """Convert SVG to PNG using CairoSVG"""
         try:
@@ -582,6 +605,9 @@ class PreviewGenerator:
         elif ext == '.ai':
             return 'Vector (AI)'
         elif ext == '.pdf':
+            is_raster, img_count = self._pdf_has_only_raster(input_file)
+            if is_raster:
+                return 'PDF (embedded raster)'
             return 'Vector (PDF)'
         return 'Vector'
 
@@ -1903,6 +1929,16 @@ function reset(){scale=fitScale;tx=0;ty=0;apply();}
             st.metric("File Size", f"{result['size_kb']} KB")
         if result.get('file_type'):
             st.metric("File Type", result['file_type'].title())
+            if 'embedded raster' in result.get('file_type', '').lower():
+                st.warning("""
+⚠️ **This file contains a raster image, not vector paths.**
+
+Despite the file extension, this is not a true vector file. It's a raster image (like a JPG or PNG) saved inside a vector wrapper.
+
+**What to tell your customer:**
+> "This file appears to be a raster image saved as a vector file. For best print quality, we need the original vector file (.ai or .eps) from your designer, or a high-resolution PNG/JPG at 300 DPI or higher."
+                """)
+
         if result.get('embroidery_info'):
             emb = result['embroidery_info']
             st.markdown("### 🧵 Embroidery Info")
