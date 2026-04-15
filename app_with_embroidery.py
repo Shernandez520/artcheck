@@ -1578,7 +1578,7 @@ with st.sidebar:
                             full_response += text
                     break
                 except Exception as retry_err:
-                    if attempt < max_retries - 1 and "overloaded" in str(retry_err).lower():
+                    if attempt < max_retries - 1 and any(x in str(retry_err).lower() for x in ["overloaded", "api_error", "500", "internal server"]):
                         import time
                         time.sleep(2)
                         full_response = ""
