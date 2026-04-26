@@ -146,44 +146,8 @@ CRITICAL: Frame technical issues as protecting the customer's brand quality, not
 Bad: "Your file won't work"
 Good: "To ensure your logo looks sharp and professional on the final product, we need..."
 
-EXAMPLES OF TECHNICAL ACCURACY + COMMERCIAL REALITY:
-
-Example: "Can I embroider gradients?"
-Bad Answer: "No, embroidery can't do gradients"
-Good Answer: "Yes, gradient embroidery is technically possible using thread-blending or variegated thread techniques. However, most promotional products vendors don't offer this because it requires specialty digitizing ($75-150 setup), results can be inconsistent between production runs, and typically doubles the per-piece cost. Here are the alternatives that give you a premium look at better value: [options with pricing]"
-
-Example: "Can I use RGB colors for print?"
-Bad Answer: "No, you can't use RGB"
-Good Answer: "RGB files will print, but the colors will shift significantly - bright RGB colors appear much duller in CMYK print. This isn't a limitation, it's physics: screens emit light (RGB) while printers absorb light with ink (CMYK). For accurate color matching, we need to convert to CMYK or use Pantone spot colors. Here's what to tell the customer: [script]"
-
-Example: "Can we print 12 colors in screen printing?"
-Bad Answer: "No, too many colors"
-Good Answer: "Yes, 12-color screen printing is technically possible - each color just needs its own screen. However, the setup cost and per-piece price make it rarely practical for promotional products. Here's the pricing reality: [breakdown]. Most customers get better ROI with these alternatives: [options]"
-
 HANDLING "BUT CHATGPT SAID..." SCENARIOS:
 If a customer claims ChatGPT or Google says something is possible that you're recommending against, acknowledge the technical possibility FIRST, then explain the commercial reality. Never contradict easily verifiable information - instead add the context ChatGPT doesn't have (industry pricing, vendor capabilities, production practicalities).
-
-HANDLING COMMON SCENARIOS:
-
-🚫 Low Resolution File:
-"That file will print blurry. Here's what to tell them:
-📧 SCRIPT: 'Thanks for the logo! To ensure it looks crisp and professional on your [products], we need either a vector file (.ai, .eps, .pdf) or a high-resolution image (300 DPI at print size). Your current file is 72 DPI which will appear pixelated. Do you have the original design file from your designer? If not, our art team can recreate it for $[price].'
-💰 PRICING: Don't waive art fees - position as quality assurance"
-
-🎨 Too Many Colors:
-"Design has 12 colors, screen printing max is typically 4-6. Here's the conversation:
-📧 SCRIPT: 'Love the design! For screen printing, each color is a separate screen which affects pricing and production time. We can either simplify to 4-6 colors (I can get you a quote on that), or use digital printing which handles full color but at a different price point. Which direction works better for your budget?'
-💡 EXPLAIN: Walk them through the cost difference - 6 color screen print vs DTG"
-
-🧵 Wrong File for Embroidery:
-"They sent a .jpg, need actual embroidery file:
-📧 SCRIPT: 'For embroidery, we need the design converted into stitch data (.dst file) by a digitizer. If you have an embroidery file from a previous order, we can use that. Otherwise, our digitizing service is $[price] - one-time setup fee, then you own the file for future orders.'
-💰 PRICING: Digitizing $25-50 typical, charge what your supplier charges + markup"
-
-💸 Customer Balking at Art Charges:
-"They're upset about $35 art fee:
-📧 SCRIPT: 'I totally understand wanting to keep costs down. The art setup ensures your logo is print-ready and will look professional on every piece. Think of it like a one-time investment - once we have your file properly set up, there's no art charge on reorders. Plus, we're essentially protecting your brand's image quality.'
-💡 FRAME: It's quality control, not an upcharge. Compare to getting cheap business cards that look blurry."
 
 COMMUNICATION STYLE:
 - Lead with the customer-facing script - that's what the rep needs immediately
@@ -1572,7 +1536,7 @@ with st.sidebar:
                         model="claude-sonnet-4-20250514",
                         max_tokens=1000,
                         system=build_artbot_system_prompt(),
-                        messages=st.session_state.artbot_history.copy()
+                        messages=st.session_state.artbot_history[-8:].copy()
                     ) as stream:
                         for text in stream.text_stream:
                             full_response += text
