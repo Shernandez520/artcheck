@@ -1709,12 +1709,14 @@ if uploaded_file:
             _is_raster_pdf = len(_images) > 0 and len(_paths) < 3
             if _is_raster_pdf:
                 st.info("📷 Raster image detected inside PDF — analyzing for production suitability...")
-                # Extract the first embedded image for analysis
-                _xref = _images[0][0]
-                _base_image = _doc.extract_image(_xref)
-                _img_bytes = _base_image["image"]
-                _img_ext = _base_image["ext"]
+                # Extract and cache image bytes in session state so bg changes don't re-extract
+                _cache_key = f"raster_pdf_bytes_{uploaded_file.name}_{uploaded_file.size}"
+                if _cache_key not in st.session_state:
+                    _xref = _images[0][0]
+                    _base_image = _doc.extract_image(_xref)
+                    st.session_state[_cache_key] = (_base_image["image"], _base_image["ext"])
                 _doc.close()
+                _img_bytes, _img_ext = st.session_state[_cache_key]
                 # Save extracted image to temp file
                 _img_tmp = tempfile.mktemp(suffix=f'.{_img_ext}')
                 with open(_img_tmp, 'wb') as _f:
