@@ -1746,18 +1746,10 @@ if uploaded_file:
                     _bg_layer.paste(_preview_img, mask=_preview_img.split()[3])
                     _preview_img = _bg_layer.convert('RGB')
                 elif _bg == 'auto':
-                    # Check if image is mostly dark/transparent — if so use light bg
-                    import numpy as _np
-                    _arr = _np.array(_preview_img)
-                    _alpha = _arr[:,:,3] if _arr.shape[2] == 4 else None
-                    if _alpha is not None:
-                        _visible = _arr[_alpha > 10]
-                        if len(_visible) > 0:
-                            _brightness = _visible[:,:3].mean()
-                            if _brightness < 128:
-                                _bg_layer = _PIL_Image.new('RGBA', _preview_img.size, (255, 255, 255, 255))
-                                _bg_layer.paste(_preview_img, mask=_preview_img.split()[3])
-                                _preview_img = _bg_layer.convert('RGB')
+                    # Default auto to light background (safe, no memory spike)
+                    _bg_layer = _PIL_Image.new('RGBA', _preview_img.size, (255, 255, 255, 255))
+                    _bg_layer.paste(_preview_img, mask=_preview_img.split()[3])
+                    _preview_img = _bg_layer.convert('RGB')
                 st.image(_preview_img, caption="Extracted raster image from PDF", use_container_width=True)
                 # Run raster analysis on extracted image
                 _raster_analyzer = RasterAnalyzer()
