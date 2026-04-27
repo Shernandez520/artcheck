@@ -1695,6 +1695,63 @@ if uploaded_file:
             st.session_state.pop('preview_filename', None)
             st.rerun()
 
+    # Check for raster-in-PDF before normal vector flow
+    if Path(uploaded_file.name).suffix.lower() in ['.pdf', '.ai']:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as _tmp:
+            _tmp.write(uploaded_file.getvalue())
+            _pdf_tmp_path = _tmp.name
+        try:
+            import fitz as _fitz
+            _doc = _fitz.open(_pdf_tmp_path)
+            _page = _doc[0]
+            _paths = _page.get_drawings()
+            _images = _page.get_images()
+            _is_raster_pdf = len(_images) > 0 and len(_paths) < 3
+            if _is_raster_pdf:
+                st.info("📷 Raster image detected inside PDF — analyzing for production suitability...")
+                # Extract the first embedded image for analysis
+                _xref = _images[0][0]
+                _base_image = _doc.extract_image(_xref)
+                _img_bytes = _base_image["image"]
+                _img_ext = _base_image["ext"]
+                _doc.close()
+                # Save extracted image to temp file
+                _img_tmp = tempfile.mktemp(suffix=f'.{_img_ext}')
+                with open(_img_tmp, 'wb') as _f:
+                    _f.write(_img_bytes)
+                # Show preview of the extracted image
+                from PIL import Image as _PIL_Image
+                _preview_img = _PIL_Image.open(_img_tmp)
+                st.image(_preview_img, caption="Extracted raster image from PDF", use_container_width=True)
+                # Run raster analysis on extracted image
+                _raster_analyzer = RasterAnalyzer()
+                _analysis = _raster_analyzer.analyze(_img_tmp)
+                # Clean up
+                if os.path.exists(_img_tmp): os.unlink(_img_tmp)
+                if os.path.exists(_pdf_tmp_path): os.unlink(_pdf_tmp_path)
+                # Store ArtBot context
+                st.session_state['artbot_file_context'] = {
+                    'filename': uploaded_file.name,
+                    'file_type': 'raster-in-PDF',
+                    'width': _analysis.get('width_px'),
+                    'height': _analysis.get('height_px'),
+                    'dpi': _analysis.get('dpi'),
+                    'color_mode': _analysis.get('color_mode'),
+                    'verdict': _analysis.get('verdict'),
+                    'warnings': _analysis.get('warnings', []),
+                    'size_kb': round(uploaded_file.size / 1024, 2),
+                }
+                render_raster_results(_analysis, uploaded_file.name)
+                st.stop()
+            else:
+                _doc.close()
+        except Exception as _e:
+            pass
+        finally:
+            if os.path.exists(_pdf_tmp_path):
+                try: os.unlink(_pdf_tmp_path)
+                except: pass
+
     # Handle raster images separately
     raster_analyzer = RasterAnalyzer()
     if raster_analyzer.is_raster(uploaded_file.name):
