@@ -1719,9 +1719,43 @@ if uploaded_file:
                 _img_tmp = tempfile.mktemp(suffix=f'.{_img_ext}')
                 with open(_img_tmp, 'wb') as _f:
                     _f.write(_img_bytes)
-                # Show preview of the extracted image
+                # Background selector
+                if 'bg_type_raster_pdf' not in st.session_state:
+                    st.session_state.bg_type_raster_pdf = 'auto'
+                _btn_labels = [("🔄 Auto", "auto"), ("☀️ Light", "light"), ("🌙 Dark", "dark"), ("⬜ Transparent", "transparent")]
+                _cols = st.columns(4)
+                for _col, (_label, _val) in zip(_cols, _btn_labels):
+                    with _col:
+                        _selected = st.session_state.bg_type_raster_pdf == _val
+                        if st.button(_label, use_container_width=True, type="primary" if _selected else "secondary", key=f"rpdf_bg_{_val}"):
+                            st.session_state.bg_type_raster_pdf = _val
+                            st.rerun()
+                st.caption(f"Background: **{st.session_state.bg_type_raster_pdf.title()}**")
+                # Apply background to extracted image
                 from PIL import Image as _PIL_Image
-                _preview_img = _PIL_Image.open(_img_tmp)
+                _preview_img = _PIL_Image.open(_img_tmp).convert('RGBA')
+                _bg = st.session_state.bg_type_raster_pdf
+                if _bg == 'light':
+                    _bg_layer = _PIL_Image.new('RGBA', _preview_img.size, (255, 255, 255, 255))
+                    _bg_layer.paste(_preview_img, mask=_preview_img.split()[3])
+                    _preview_img = _bg_layer.convert('RGB')
+                elif _bg == 'dark':
+                    _bg_layer = _PIL_Image.new('RGBA', _preview_img.size, (30, 30, 30, 255))
+                    _bg_layer.paste(_preview_img, mask=_preview_img.split()[3])
+                    _preview_img = _bg_layer.convert('RGB')
+                elif _bg == 'auto':
+                    # Check if image is mostly dark/transparent — if so use light bg
+                    import numpy as _np
+                    _arr = _np.array(_preview_img)
+                    _alpha = _arr[:,:,3] if _arr.shape[2] == 4 else None
+                    if _alpha is not None:
+                        _visible = _arr[_alpha > 10]
+                        if len(_visible) > 0:
+                            _brightness = _visible[:,:3].mean()
+                            if _brightness < 128:
+                                _bg_layer = _PIL_Image.new('RGBA', _preview_img.size, (255, 255, 255, 255))
+                                _bg_layer.paste(_preview_img, mask=_preview_img.split()[3])
+                                _preview_img = _bg_layer.convert('RGB')
                 st.image(_preview_img, caption="Extracted raster image from PDF", use_container_width=True)
                 # Run raster analysis on extracted image
                 _raster_analyzer = RasterAnalyzer()
