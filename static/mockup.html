@@ -404,7 +404,7 @@
       <h1>Mockup Builder</h1>
       <span class="subtitle">by ArtCheck</span>
     </div>
-    <a href="/" class="back-link">← Back to ArtCheck</a>
+    <a href="/" class="back-link" id="backLink">← Back to ArtCheck</a>
   </header>
 
   <div class="workspace">
@@ -797,6 +797,17 @@ window.addEventListener('beforeunload', (e) => {
   if (state.product || state.artwork) {
     e.preventDefault();
     e.returnValue = '';
+  }
+});
+
+/* ----------- iframe-aware Back link ----------- */
+document.getElementById('backLink').addEventListener('click', (e) => {
+  e.preventDefault();
+  // If we're inside an iframe (Streamlit components.html), navigate the parent
+  if (window.parent !== window) {
+    window.parent.location.href = '/';
+  } else {
+    window.location.href = '/';
   }
 });
 </script>

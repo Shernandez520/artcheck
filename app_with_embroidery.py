@@ -31,6 +31,31 @@ st.set_page_config(
     layout="wide"
 )
 
+# ============================================================================
+# MOCKUP BUILDER ROUTE
+# When ?mockup=1 is in the URL, render only the standalone mockup tool.
+# Streamlit's static serving sends HTML as text/plain, so we serve through
+# components.html() instead.
+# ============================================================================
+if st.query_params.get("mockup"):
+    import streamlit.components.v1 as _mockup_components
+    try:
+        with open("static/mockup.html", "r", encoding="utf-8") as _mf:
+            _mockup_html = _mf.read()
+        # Hide Streamlit's default chrome on this page only
+        st.markdown("""
+        <style>
+            [data-testid="stHeader"], [data-testid="stToolbar"],
+            [data-testid="stDecoration"], footer, #MainMenu { display: none !important; }
+            .block-container { padding: 0 !important; max-width: 100% !important; }
+            section.main > div { padding: 0 !important; }
+        </style>
+        """, unsafe_allow_html=True)
+        _mockup_components.html(_mockup_html, height=1400, scrolling=True)
+    except Exception as _err:
+        st.error(f"Could not load Mockup Builder: {_err}")
+    st.stop()
+
 # Custom CSS
 st.markdown("""
 <style>
@@ -2054,7 +2079,7 @@ Despite the file extension, this is not a true vector file. It's a raster image 
             use_container_width=True
         )
         st.markdown(
-            '<a href="./app/static/mockup.html" target="_blank" '
+            '<a href="?mockup=1" target="_blank" '
             'style="display:block;text-align:center;padding:0.5rem 1rem;margin-top:0.5rem;'
             'background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);'
             'color:white;text-decoration:none;border-radius:6px;font-weight:600;'
