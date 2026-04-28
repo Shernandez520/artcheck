@@ -1735,6 +1735,7 @@ if uploaded_file:
         st.session_state.pop('preview_color_data', None)
         st.session_state.pop('preview_filename', None)
         st.session_state.pop('artbot_file_context', None)
+        st.session_state.pop('_raster_context_synced', None)
 
     # Check for InDesign files
     if uploaded_file.name.lower().endswith('.indd'):
@@ -1884,6 +1885,12 @@ if uploaded_file:
         }
 
         render_raster_results(analysis, uploaded_file.name)
+        # Force a rerun so the sidebar picks up the newly-set artbot_file_context.
+        # Streamlit renders the sidebar before the main panel, so on first upload
+        # the sidebar misses the context. The flag prevents an infinite loop.
+        if not st.session_state.get('_raster_context_synced'):
+            st.session_state['_raster_context_synced'] = True
+            st.rerun()
         st.stop()
 
     # Background options — use session state so selection survives the Generate button click
@@ -2149,6 +2156,7 @@ Despite the file extension, this is not a true vector file. It's a raster image 
             st.session_state.pop('preview_filename', None)
             st.session_state.pop('preview_download_bytes', None)
             st.session_state.pop('artbot_file_context', None)
+            st.session_state.pop('_raster_context_synced', None)
             # Clear mockup handoff if any
             _old_token = st.session_state.pop('mockup_handoff_token', None)
             if _old_token:
