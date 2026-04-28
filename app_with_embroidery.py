@@ -58,6 +58,37 @@ def _cleanup_mockup_handoff():
         _store.pop(_k, None)
 
 
+def _render_mockup_builder_button(art_bytes, filename_stem):
+    """Mint a handoff token for the given artwork bytes and render the
+    'Open Mockup Builder' button. Used by both vector and raster flows."""
+    import secrets as _secrets, time as _time
+    if not art_bytes:
+        return
+    _store = _get_mockup_handoff_store()
+    _existing_token = st.session_state.get('mockup_handoff_token')
+    if _existing_token and _existing_token in _store:
+        _b, _n, _ = _store[_existing_token]
+        _store[_existing_token] = (_b, _n, _time.time())
+        _mockup_token = _existing_token
+    else:
+        _mockup_token = _secrets.token_urlsafe(8)
+        _art_filename = f"{filename_stem}_preview.png"
+        _store[_mockup_token] = (art_bytes, _art_filename, _time.time())
+        st.session_state['mockup_handoff_token'] = _mockup_token
+        _cleanup_mockup_handoff()
+    st.markdown(
+        f'<a href="?mockup=1&token={_mockup_token}" target="_blank" '
+        'style="display:block;text-align:center;padding:0.6rem 1rem;margin-top:0.5rem;'
+        'background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);'
+        'color:white;text-decoration:none;border-radius:6px;font-weight:600;'
+        'font-size:0.95rem;">'
+        '🖼️ Open Mockup Builder →</a>'
+        '<div style="font-size:0.78rem;color:#888;text-align:center;margin-top:6px;">'
+        'Your artwork will be pre-loaded — just drop in a product photo</div>',
+        unsafe_allow_html=True
+    )
+
+
 if st.query_params.get("mockup"):
     import streamlit.components.v1 as _mockup_components
     import base64 as _b64
@@ -1845,6 +1876,10 @@ if uploaded_file:
                     'size_kb': round(uploaded_file.size / 1024, 2),
                 }
                 render_raster_results(_analysis, uploaded_file.name)
+                # Mockup builder uses the extracted raster bytes
+                st.markdown("---")
+                _filename_stem = uploaded_file.name.rsplit('.', 1)[0]
+                _render_mockup_builder_button(_img_bytes, _filename_stem)
                 st.stop()
             else:
                 _doc.close()
@@ -1885,6 +1920,13 @@ if uploaded_file:
         }
 
         render_raster_results(analysis, uploaded_file.name)
+
+        # Mockup builder button — uses the original PNG bytes
+        if uploaded_file.name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.tiff', '.tif', '.bmp', '.webp')):
+            st.markdown("---")
+            _filename_stem = uploaded_file.name.rsplit('.', 1)[0]
+            _render_mockup_builder_button(uploaded_file.getvalue(), _filename_stem)
+
         # Force a rerun so the sidebar picks up the newly-set artbot_file_context.
         # Streamlit renders the sidebar before the main panel, so on first upload
         # the sidebar misses the context. The flag prevents an infinite loop.
@@ -2123,32 +2165,8 @@ Despite the file extension, this is not a true vector file. It's a raster image 
             mime="image/png",
             use_container_width=True
         )
-        # Mint a one-time token so the Mockup Builder can pre-load this artwork
-        import secrets as _secrets, time as _time
-        _store = _get_mockup_handoff_store()
-        _existing_token = st.session_state.get('mockup_handoff_token')
-        if _existing_token and _existing_token in _store:
-            # Refresh timestamp so it doesn't expire while user is browsing
-            _b, _n, _ = _store[_existing_token]
-            _store[_existing_token] = (_b, _n, _time.time())
-            _mockup_token = _existing_token
-        else:
-            _mockup_token = _secrets.token_urlsafe(8)
-            _art_filename = f"{st.session_state.get('preview_filename', 'artwork').rsplit('.', 1)[0]}_preview.png"
-            _store[_mockup_token] = (_dl_data, _art_filename, _time.time())
-            st.session_state['mockup_handoff_token'] = _mockup_token
-            _cleanup_mockup_handoff()
-        st.markdown(
-            f'<a href="?mockup=1&token={_mockup_token}" target="_blank" '
-            'style="display:block;text-align:center;padding:0.5rem 1rem;margin-top:0.5rem;'
-            'background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);'
-            'color:white;text-decoration:none;border-radius:6px;font-weight:600;'
-            'font-size:0.95rem;">'
-            '🖼️ Open Mockup Builder →</a>'
-            '<div style="font-size:0.78rem;color:#888;text-align:center;margin-top:6px;">'
-            'Your artwork will be pre-loaded — just drop in a product photo</div>',
-            unsafe_allow_html=True
-        )
+        _filename_stem = st.session_state.get('preview_filename', 'artwork').rsplit('.', 1)[0]
+        _render_mockup_builder_button(_dl_data, _filename_stem)
         if st.button("🔄 Upload New File", use_container_width=True):
             st.session_state.pop('preview_image_bytes', None)
             st.session_state.pop('preview_result', None)
