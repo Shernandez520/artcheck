@@ -37,11 +37,43 @@ st.set_page_config(
 # Streamlit's static serving sends HTML as text/plain, so we serve through
 # components.html() instead.
 # ============================================================================
+# ============================================================================
+# MOCKUP BUILDER HANDOFF STORE
+# Module-level dict for passing artwork from analysis tab to mockup tab.
+# Tokens are single-use; entries auto-expire after 5 minutes.
+# ============================================================================
+_MOCKUP_HANDOFF = {}
+
+def _cleanup_mockup_handoff():
+    """Drop handoff entries older than 5 minutes."""
+    import time as _time
+    _now = _time.time()
+    _stale = [_k for _k, _v in _MOCKUP_HANDOFF.items() if _now - _v[2] > 300]
+    for _k in _stale:
+        _MOCKUP_HANDOFF.pop(_k, None)
+
+
 if st.query_params.get("mockup"):
     import streamlit.components.v1 as _mockup_components
+    import base64 as _b64
     try:
         with open("static/mockup.html", "r", encoding="utf-8") as _mf:
             _mockup_html = _mf.read()
+
+        # Preload artwork if a valid token was passed
+        _token = st.query_params.get("token", "")
+        if _token and _token in _MOCKUP_HANDOFF:
+            _art_bytes, _art_name, _ = _MOCKUP_HANDOFF.pop(_token)
+            _b64_data = _b64.b64encode(_art_bytes).decode("ascii")
+            _safe_name = _art_name.replace('"', '').replace("'", "")
+            _inject = (
+                f'<script>'
+                f'window.__preloadedArtwork = "data:image/png;base64,{_b64_data}";'
+                f'window.__preloadedArtworkName = "{_safe_name}";'
+                f'</script>'
+            )
+            _mockup_html = _mockup_html.replace("</head>", _inject + "</head>", 1)
+
         # Hide Streamlit's default chrome on this page only
         st.markdown("""
         <style>
@@ -2078,15 +2110,29 @@ Despite the file extension, this is not a true vector file. It's a raster image 
             mime="image/png",
             use_container_width=True
         )
+        # Mint a one-time token so the Mockup Builder can pre-load this artwork
+        import secrets as _secrets, time as _time
+        _existing_token = st.session_state.get('mockup_handoff_token')
+        if _existing_token and _existing_token in _MOCKUP_HANDOFF:
+            # Refresh timestamp so it doesn't expire while user is browsing
+            _b, _n, _ = _MOCKUP_HANDOFF[_existing_token]
+            _MOCKUP_HANDOFF[_existing_token] = (_b, _n, _time.time())
+            _mockup_token = _existing_token
+        else:
+            _mockup_token = _secrets.token_urlsafe(8)
+            _art_filename = f"{st.session_state.get('preview_filename', 'artwork').rsplit('.', 1)[0]}_preview.png"
+            _MOCKUP_HANDOFF[_mockup_token] = (_dl_data, _art_filename, _time.time())
+            st.session_state['mockup_handoff_token'] = _mockup_token
+            _cleanup_mockup_handoff()
         st.markdown(
-            '<a href="?mockup=1" target="_blank" '
+            f'<a href="?mockup=1&token={_mockup_token}" target="_blank" '
             'style="display:block;text-align:center;padding:0.5rem 1rem;margin-top:0.5rem;'
             'background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);'
             'color:white;text-decoration:none;border-radius:6px;font-weight:600;'
             'font-size:0.95rem;">'
             '🖼️ Open Mockup Builder →</a>'
             '<div style="font-size:0.78rem;color:#888;text-align:center;margin-top:6px;">'
-            'Save the PNG above, then drop it onto any product photo</div>',
+            'Your artwork will be pre-loaded — just drop in a product photo</div>',
             unsafe_allow_html=True
         )
         if st.button("🔄 Upload New File", use_container_width=True):
@@ -2096,6 +2142,10 @@ Despite the file extension, this is not a true vector file. It's a raster image 
             st.session_state.pop('preview_filename', None)
             st.session_state.pop('preview_download_bytes', None)
             st.session_state.pop('artbot_file_context', None)
+            # Clear mockup handoff if any
+            _old_token = st.session_state.pop('mockup_handoff_token', None)
+            if _old_token:
+                _MOCKUP_HANDOFF.pop(_old_token, None)
             # Clear any raster-in-PDF caches
             for _k in list(st.session_state.keys()):
                 if _k.startswith('raster_pdf_bytes_') or _k.startswith('raster_pdf_analysis_'):

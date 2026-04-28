@@ -860,6 +860,60 @@ document.getElementById('backLink').addEventListener('click', (e) => {
     window.location.href = '/';
   }
 });
+
+/* ----------- Auto-load handoff artwork from ArtCheck -----------
+   When ArtCheck mints a token and links here, Python injects the
+   artwork as a data URL into window.__preloadedArtwork. We hydrate
+   it on load as if the user had dropped the file themselves. */
+async function loadPreloadedArtwork() {
+  if (!window.__preloadedArtwork) return;
+  try {
+    const response = await fetch(window.__preloadedArtwork);
+    const blob = await response.blob();
+    const filename = window.__preloadedArtworkName || 'artwork.png';
+    const file = new File([blob], filename, { type: blob.type || 'image/png' });
+    await handleArtworkFile(file);
+    showHandoffBadge();
+  } catch (e) {
+    console.warn('Could not load preloaded artwork:', e);
+  } finally {
+    // One-time use — clear so a manual upload won't get overridden
+    window.__preloadedArtwork = null;
+  }
+}
+
+function showHandoffBadge() {
+  const badge = document.createElement('div');
+  badge.textContent = '✓ Artwork loaded from ArtCheck';
+  badge.style.cssText = `
+    position: fixed; top: 20px; right: 20px;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #28a745 0%, #20893a 100%);
+    color: white; font-size: 0.85rem; font-weight: 600;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(40, 167, 69, 0.3);
+    z-index: 1000;
+    opacity: 0; transform: translateY(-10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  `;
+  document.body.appendChild(badge);
+  requestAnimationFrame(() => {
+    badge.style.opacity = '1';
+    badge.style.transform = 'translateY(0)';
+  });
+  setTimeout(() => {
+    badge.style.opacity = '0';
+    badge.style.transform = 'translateY(-10px)';
+    setTimeout(() => badge.remove(), 300);
+  }, 3500);
+}
+
+// Run after DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', loadPreloadedArtwork);
+} else {
+  loadPreloadedArtwork();
+}
 </script>
 
 </body>
