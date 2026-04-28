@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ArtCheck — Mockup Builder</title>
+<style>
+  /* ============================================================
+     ArtCheck Mockup Builder
+     Standalone client-side tool. Runs entirely in the browser.
+     ============================================================ */
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #1c2230;
+    --border: #2a3142;
+    --text: #e6edf3;
+    --text-dim: #8b95a7;
+    --text-faint: #5a6577;
+    --accent: #667eea;
+    --accent-2: #764ba2;
+    --accent-glow: rgba(102, 126, 234, 0.25);
+    --success: #28a745;
+    --danger: #d73a49;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.5);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  body {
+    background-image:
+      radial-gradient(circle at 12% 8%, rgba(102, 126, 234, 0.07) 0%, transparent 45%),
+      radial-gradient(circle at 88% 90%, rgba(118, 75, 162, 0.06) 0%, transparent 45%);
+    min-height: 100vh;
+  }
+
+  .container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 28px 24px 80px;
+  }
+
+  /* ============================================================
+     HEADER
+     ============================================================ */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 28px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+  }
+
+  .brand h1 {
+    font-family: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-weight: 600;
+    font-size: 1.75rem;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .brand .subtitle {
+    font-size: 0.85rem;
+    color: var(--text-faint);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  .back-link {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 0.85rem;
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    transition: all 0.18s ease;
+  }
+  .back-link:hover {
+    color: var(--text);
+    border-color: var(--accent);
+    background: var(--accent-glow);
+  }
+
+  /* ============================================================
+     LAYOUT
+     ============================================================ */
+  .workspace {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 22px;
+    align-items: start;
+  }
+
+  @media (max-width: 900px) {
+    .workspace { grid-template-columns: 1fr; }
+  }
+
+  /* ============================================================
+     SIDEBAR
+     ============================================================ */
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    position: sticky;
+    top: 20px;
+  }
+  @media (max-width: 900px) {
+    .sidebar { position: static; }
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+
+  .panel-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Upload drop zones */
+  .dropzone {
+    border: 1.5px dashed var(--border);
+    border-radius: var(--radius-sm);
+    padding: 20px 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    background: var(--surface-2);
+    position: relative;
+    overflow: hidden;
+  }
+  .dropzone:hover, .dropzone.drag-over {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+  }
+  .dropzone.loaded {
+    border-style: solid;
+    border-color: var(--success);
+    padding: 10px;
+  }
+  .dropzone-icon {
+    font-size: 1.5rem;
+    margin-bottom: 6px;
+    opacity: 0.7;
+  }
+  .dropzone-label {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+  .dropzone-hint {
+    font-size: 0.7rem;
+    color: var(--text-faint);
+    margin-top: 4px;
+  }
+  .dropzone-thumb {
+    width: 100%;
+    height: 80px;
+    object-fit: contain;
+    background:
+      linear-gradient(45deg, #2a3142 25%, transparent 25%),
+      linear-gradient(-45deg, #2a3142 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #2a3142 75%),
+      linear-gradient(-45deg, transparent 75%, #2a3142 75%);
+    background-size: 12px 12px;
+    background-position: 0 0, 0 6px, 6px -6px, -6px 0px;
+    background-color: #1c2230;
+    border-radius: 4px;
+  }
+  .dropzone-filename {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-top: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  input[type="file"] { display: none; }
+
+  /* Sliders */
+  .control {
+    margin-bottom: 14px;
+  }
+  .control:last-child { margin-bottom: 0; }
+  .control-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+  .control-value {
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+
+  input[type="range"] {
+    width: 100%;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: grab;
+    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
+    transition: transform 0.1s;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+  input[type="range"]::-webkit-slider-thumb:active { cursor: grabbing; }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    cursor: grab;
+  }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    width: 100%;
+    font-family: inherit;
+  }
+  .btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+  }
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    border-color: transparent;
+    color: white;
+    font-weight: 600;
+  }
+  .btn-primary:hover:not(:disabled) {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px var(--accent-glow);
+  }
+  .btn-secondary { background: transparent; }
+
+  .btn-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  /* ============================================================
+     CANVAS AREA
+     ============================================================ */
+  .canvas-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    min-height: 500px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow);
+  }
+
+  .canvas-stage {
+    flex: 1;
+    background:
+      linear-gradient(45deg, #1a1f2b 25%, transparent 25%),
+      linear-gradient(-45deg, #1a1f2b 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #1a1f2b 75%),
+      linear-gradient(-45deg, transparent 75%, #1a1f2b 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    background-color: #131822;
+    border-radius: var(--radius-sm);
+    position: relative;
+    overflow: hidden;
+    min-height: 500px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #canvas {
+    max-width: 100%;
+    max-height: 70vh;
+    display: block;
+    cursor: grab;
+    touch-action: none;
+  }
+  #canvas.grabbing { cursor: grabbing; }
+  #canvas.no-artwork { cursor: default; }
+
+  .empty-state {
+    text-align: center;
+    color: var(--text-faint);
+    padding: 40px 20px;
+  }
+  .empty-state .empty-icon {
+    font-size: 3rem;
+    margin-bottom: 12px;
+    opacity: 0.4;
+  }
+  .empty-state h3 {
+    font-size: 1.1rem;
+    color: var(--text-dim);
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+
+  /* Tip */
+  .tip {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: var(--surface-2);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+
+  /* ============================================================
+     FOOTER
+     ============================================================ */
+  footer {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-faint);
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <header>
+    <div class="brand">
+      <h1>Mockup Builder</h1>
+      <span class="subtitle">by ArtCheck</span>
+    </div>
+    <a href="/" class="back-link">← Back to ArtCheck</a>
+  </header>
+
+  <div class="workspace">
+
+    <!-- LEFT SIDEBAR: Uploads & Controls -->
+    <div class="sidebar">
+
+      <!-- Product upload -->
+      <div class="panel">
+        <div class="panel-title">① Product Image</div>
+        <label class="dropzone" id="productZone" for="productInput">
+          <div class="dropzone-icon">🛍️</div>
+          <div class="dropzone-label">Drop product photo</div>
+          <div class="dropzone-hint">or click to browse</div>
+        </label>
+        <input type="file" id="productInput" accept="image/*">
+      </div>
+
+      <!-- Artwork upload -->
+      <div class="panel">
+        <div class="panel-title">② Artwork (PNG)</div>
+        <label class="dropzone" id="artworkZone" for="artworkInput">
+          <div class="dropzone-icon">🎨</div>
+          <div class="dropzone-label">Drop your logo PNG</div>
+          <div class="dropzone-hint">transparent background recommended</div>
+        </label>
+        <input type="file" id="artworkInput" accept="image/png,image/*">
+      </div>
+
+      <!-- Controls -->
+      <div class="panel" id="controlsPanel" style="display:none;">
+        <div class="panel-title">③ Adjust</div>
+
+        <div class="control">
+          <div class="control-label">
+            <span>Size</span>
+            <span class="control-value" id="scaleVal">30%</span>
+          </div>
+          <input type="range" id="scaleSlider" min="2" max="100" value="30">
+        </div>
+
+        <div class="control">
+          <div class="control-label">
+            <span>Rotation</span>
+            <span class="control-value" id="rotationVal">0°</span>
+          </div>
+          <input type="range" id="rotationSlider" min="-180" max="180" value="0">
+        </div>
+
+        <div class="control">
+          <div class="control-label">
+            <span>Opacity</span>
+            <span class="control-value" id="opacityVal">100%</span>
+          </div>
+          <input type="range" id="opacitySlider" min="10" max="100" value="100">
+        </div>
+
+        <div class="btn-row" style="margin-top:14px;">
+          <button class="btn btn-secondary" id="resetBtn">↻ Reset</button>
+        </div>
+      </div>
+
+      <!-- Download -->
+      <div class="panel" id="downloadPanel" style="display:none;">
+        <div class="panel-title">④ Export</div>
+        <button class="btn btn-primary" id="downloadPng">📥 Download Mockup (PNG)</button>
+        <div style="height:8px;"></div>
+        <button class="btn btn-secondary" id="downloadJpg">📷 Download as JPG</button>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: Canvas Stage -->
+    <div class="canvas-wrap">
+      <div class="canvas-stage" id="stage">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">🖼️</div>
+          <h3>Upload a product image to start</h3>
+          <p>Drop a SAGE photo, supplier image, or any product shot.</p>
+        </div>
+        <canvas id="canvas" style="display:none;"></canvas>
+      </div>
+      <div class="tip" id="dragTip" style="display:none;">
+        💡 <strong>Drag the artwork</strong> on the canvas to position it. Use sliders for size, rotation, and opacity.
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    Built with care for promotional products professionals · Runs entirely in your browser · No uploads, no tracking
+  </footer>
+</div>
+
+<script>
+/* ============================================================
+   Mockup Builder — Pure client-side compositing
+   ============================================================ */
+
+const state = {
+  product: null,        // HTMLImageElement
+  artwork: null,        // HTMLImageElement
+  productName: '',
+  artworkName: '',
+  // Artwork transform (normalized to product dimensions)
+  position: { x: 0.5, y: 0.5 },  // center
+  scale: 0.30,                    // fraction of product width
+  rotation: 0,                    // degrees
+  opacity: 1.0,
+};
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const stage = document.getElementById('stage');
+const emptyState = document.getElementById('emptyState');
+const controlsPanel = document.getElementById('controlsPanel');
+const downloadPanel = document.getElementById('downloadPanel');
+const dragTip = document.getElementById('dragTip');
+
+/* ----------- File loading ----------- */
+
+function loadImageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleProductFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  try {
+    state.product = await loadImageFromFile(file);
+    state.productName = file.name;
+    setupCanvas();
+    updateProductZoneThumb(file);
+    render();
+  } catch (e) {
+    alert('Could not load that product image. Try a different file.');
+  }
+}
+
+async function handleArtworkFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  try {
+    state.artwork = await loadImageFromFile(file);
+    state.artworkName = file.name;
+    updateArtworkZoneThumb(file);
+    controlsPanel.style.display = 'block';
+    downloadPanel.style.display = 'block';
+    dragTip.style.display = 'block';
+    canvas.classList.remove('no-artwork');
+    render();
+  } catch (e) {
+    alert('Could not load that artwork. Try a PNG file.');
+  }
+}
+
+function updateProductZoneThumb(file) {
+  const zone = document.getElementById('productZone');
+  zone.classList.add('loaded');
+  zone.innerHTML = `
+    <img class="dropzone-thumb" src="${URL.createObjectURL(file)}">
+    <div class="dropzone-filename">${file.name}</div>
+  `;
+}
+
+function updateArtworkZoneThumb(file) {
+  const zone = document.getElementById('artworkZone');
+  zone.classList.add('loaded');
+  zone.innerHTML = `
+    <img class="dropzone-thumb" src="${URL.createObjectURL(file)}">
+    <div class="dropzone-filename">${file.name}</div>
+  `;
+}
+
+/* ----------- Canvas setup ----------- */
+
+function setupCanvas() {
+  if (!state.product) return;
+  // Keep canvas at the product image's actual resolution for high-quality export.
+  canvas.width = state.product.naturalWidth;
+  canvas.height = state.product.naturalHeight;
+  // CSS sizing keeps it within the stage
+  canvas.style.display = 'block';
+  emptyState.style.display = 'none';
+  if (!state.artwork) {
+    canvas.classList.add('no-artwork');
+  }
+}
+
+/* ----------- Rendering ----------- */
+
+function render() {
+  if (!state.product) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(state.product, 0, 0);
+
+  if (state.artwork) {
+    const cx = state.position.x * canvas.width;
+    const cy = state.position.y * canvas.height;
+    const targetW = state.scale * canvas.width;
+    const aspect = state.artwork.naturalHeight / state.artwork.naturalWidth;
+    const targetH = targetW * aspect;
+
+    ctx.save();
+    ctx.globalAlpha = state.opacity;
+    ctx.translate(cx, cy);
+    ctx.rotate(state.rotation * Math.PI / 180);
+    ctx.drawImage(state.artwork, -targetW / 2, -targetH / 2, targetW, targetH);
+    ctx.restore();
+  }
+}
+
+/* ----------- Dragging ----------- */
+
+let dragging = false;
+let dragOffset = { x: 0, y: 0 };
+
+function getCanvasPoint(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const point = e.touches ? e.touches[0] : e;
+  return {
+    x: (point.clientX - rect.left) * scaleX,
+    y: (point.clientY - rect.top) * scaleY,
+  };
+}
+
+function isInsideArtwork(p) {
+  if (!state.artwork) return false;
+  const cx = state.position.x * canvas.width;
+  const cy = state.position.y * canvas.height;
+  const targetW = state.scale * canvas.width;
+  const aspect = state.artwork.naturalHeight / state.artwork.naturalWidth;
+  const targetH = targetW * aspect;
+  // Rotate point into artwork's frame
+  const dx = p.x - cx;
+  const dy = p.y - cy;
+  const cos = Math.cos(-state.rotation * Math.PI / 180);
+  const sin = Math.sin(-state.rotation * Math.PI / 180);
+  const rx = dx * cos - dy * sin;
+  const ry = dx * sin + dy * cos;
+  return Math.abs(rx) < targetW / 2 && Math.abs(ry) < targetH / 2;
+}
+
+function onPointerDown(e) {
+  if (!state.artwork) return;
+  e.preventDefault();
+  const p = getCanvasPoint(e);
+  if (isInsideArtwork(p)) {
+    dragging = true;
+    canvas.classList.add('grabbing');
+    const cx = state.position.x * canvas.width;
+    const cy = state.position.y * canvas.height;
+    dragOffset = { x: p.x - cx, y: p.y - cy };
+  }
+}
+
+function onPointerMove(e) {
+  if (!dragging) return;
+  e.preventDefault();
+  const p = getCanvasPoint(e);
+  state.position.x = (p.x - dragOffset.x) / canvas.width;
+  state.position.y = (p.y - dragOffset.y) / canvas.height;
+  // Clamp loosely (allow some over-edge)
+  state.position.x = Math.max(-0.2, Math.min(1.2, state.position.x));
+  state.position.y = Math.max(-0.2, Math.min(1.2, state.position.y));
+  render();
+}
+
+function onPointerUp() {
+  dragging = false;
+  canvas.classList.remove('grabbing');
+}
+
+canvas.addEventListener('mousedown', onPointerDown);
+window.addEventListener('mousemove', onPointerMove);
+window.addEventListener('mouseup', onPointerUp);
+canvas.addEventListener('touchstart', onPointerDown, { passive: false });
+window.addEventListener('touchmove', onPointerMove, { passive: false });
+window.addEventListener('touchend', onPointerUp);
+
+/* ----------- Sliders ----------- */
+
+const scaleSlider = document.getElementById('scaleSlider');
+const rotationSlider = document.getElementById('rotationSlider');
+const opacitySlider = document.getElementById('opacitySlider');
+
+scaleSlider.addEventListener('input', (e) => {
+  state.scale = e.target.value / 100;
+  document.getElementById('scaleVal').textContent = e.target.value + '%';
+  render();
+});
+
+rotationSlider.addEventListener('input', (e) => {
+  state.rotation = parseFloat(e.target.value);
+  document.getElementById('rotationVal').textContent = e.target.value + '°';
+  render();
+});
+
+opacitySlider.addEventListener('input', (e) => {
+  state.opacity = e.target.value / 100;
+  document.getElementById('opacityVal').textContent = e.target.value + '%';
+  render();
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  state.position = { x: 0.5, y: 0.5 };
+  state.scale = 0.30;
+  state.rotation = 0;
+  state.opacity = 1.0;
+  scaleSlider.value = 30;
+  rotationSlider.value = 0;
+  opacitySlider.value = 100;
+  document.getElementById('scaleVal').textContent = '30%';
+  document.getElementById('rotationVal').textContent = '0°';
+  document.getElementById('opacityVal').textContent = '100%';
+  render();
+});
+
+/* ----------- Drag-and-drop file input ----------- */
+
+function setupDropzone(zoneId, inputId, handler) {
+  const zone = document.getElementById(zoneId);
+  const input = document.getElementById(inputId);
+  input.addEventListener('change', (e) => {
+    if (e.target.files[0]) handler(e.target.files[0]);
+  });
+  ['dragenter', 'dragover'].forEach(evt => {
+    zone.addEventListener(evt, (e) => {
+      e.preventDefault(); e.stopPropagation();
+      zone.classList.add('drag-over');
+    });
+  });
+  ['dragleave', 'drop'].forEach(evt => {
+    zone.addEventListener(evt, (e) => {
+      e.preventDefault(); e.stopPropagation();
+      zone.classList.remove('drag-over');
+    });
+  });
+  zone.addEventListener('drop', (e) => {
+    if (e.dataTransfer.files[0]) handler(e.dataTransfer.files[0]);
+  });
+}
+
+setupDropzone('productZone', 'productInput', handleProductFile);
+setupDropzone('artworkZone', 'artworkInput', handleArtworkFile);
+
+/* ----------- Download ----------- */
+
+function downloadCanvas(format) {
+  if (!state.product) return;
+  const mimeType = format === 'jpg' ? 'image/jpeg' : 'image/png';
+  const ext = format === 'jpg' ? 'jpg' : 'png';
+  const baseName = state.productName.replace(/\.[^.]+$/, '') || 'mockup';
+  // For JPG, fill white behind transparent areas
+  let dataUrl;
+  if (format === 'jpg') {
+    const tmp = document.createElement('canvas');
+    tmp.width = canvas.width; tmp.height = canvas.height;
+    const tctx = tmp.getContext('2d');
+    tctx.fillStyle = '#ffffff';
+    tctx.fillRect(0, 0, tmp.width, tmp.height);
+    tctx.drawImage(canvas, 0, 0);
+    dataUrl = tmp.toDataURL('image/jpeg', 0.92);
+  } else {
+    dataUrl = canvas.toDataURL('image/png');
+  }
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = `${baseName}_mockup.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+document.getElementById('downloadPng').addEventListener('click', () => downloadCanvas('png'));
+document.getElementById('downloadJpg').addEventListener('click', () => downloadCanvas('jpg'));
+
+/* ----------- Prevent accidental tab close ----------- */
+window.addEventListener('beforeunload', (e) => {
+  if (state.product || state.artwork) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+</script>
+
+</body>
+</html>

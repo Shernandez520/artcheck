@@ -1639,8 +1639,9 @@ st.markdown("""
         and what to tell your customer.
     </div>
     <div style="font-size:0.9rem;color:#9cb4d8;max-width:720px;line-height:1.6;margin-top:0.85rem;padding:0.65rem 0.9rem;background:rgba(102,126,234,0.08);border-left:3px solid #667eea;border-radius:4px;">
-        💡 <strong>Building a virtual on SAGE?</strong> Use the <strong>Download PNG</strong> button after analysis — 
-        ArtCheck delivers a transparent, trimmed-to-bounds image ready to drop straight onto your product mockup.
+        💡 <strong>Need a customer mockup?</strong> Analyze your art file, download the trimmed transparent PNG, 
+        then use the built-in <strong>Mockup Builder</strong> to drop it onto any product photo — 
+        no SAGE login required.
     </div>
 </div>
 <hr style="border:none;border-top:1px solid #333;margin-bottom:1.5rem;">
@@ -2051,6 +2052,17 @@ Despite the file extension, this is not a true vector file. It's a raster image 
             file_name=f"{st.session_state.get('preview_filename', 'preview').rsplit('.', 1)[0]}_preview.png",
             mime="image/png",
             use_container_width=True
+        )
+        st.markdown(
+            '<a href="./app/static/mockup.html" target="_blank" '
+            'style="display:block;text-align:center;padding:0.5rem 1rem;margin-top:0.5rem;'
+            'background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);'
+            'color:white;text-decoration:none;border-radius:6px;font-weight:600;'
+            'font-size:0.95rem;">'
+            '🖼️ Open Mockup Builder →</a>'
+            '<div style="font-size:0.78rem;color:#888;text-align:center;margin-top:6px;">'
+            'Save the PNG above, then drop it onto any product photo</div>',
+            unsafe_allow_html=True
         )
         if st.button("🔄 Upload New File", use_container_width=True):
             st.session_state.pop('preview_image_bytes', None)
