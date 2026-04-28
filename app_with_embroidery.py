@@ -488,6 +488,11 @@ class PreviewGenerator:
         try:
             img = Image.open(output_file).convert('RGBA')
 
+            if bg_type == 'transparent_alpha':
+                # True transparent RGBA PNG for download
+                img.save(output_file, 'PNG')
+                return
+
             if bg_type == 'transparent':
                 # Render classic Photoshop-style checkerboard to show transparency
                 checker_size = max(16, min(img.width, img.height) // 30)
@@ -517,7 +522,7 @@ class PreviewGenerator:
                 bg_color = (255, 255, 255, 255)
 
             background = Image.new('RGBA', img.size, bg_color)
-            background.paste(img, mask=img.split()[3])  # Use alpha channel as mask
+            background.paste(img, mask=img.split()[3])
             background.convert('RGB').save(output_file, 'PNG')
         except Exception as e:
             st.warning(f"Background application failed: {str(e)}")
@@ -1841,6 +1846,12 @@ if uploaded_file:
 
             generator = get_preview_generator()
             result = generator.generate_preview(tmp_path, bg_type)
+            # Generate transparent version for download
+            _dl_result = generator.generate_preview(tmp_path, 'transparent_alpha')
+            _dl_bytes = None
+            if _dl_result and os.path.exists(_dl_result['image']):
+                with open(_dl_result['image'], 'rb') as _dlf:
+                    _dl_bytes = _dlf.read()
 
             color_data = None
             file_ext = Path(uploaded_file.name).suffix.lower()
@@ -1873,6 +1884,7 @@ if uploaded_file:
                 _img = _img.convert('RGBA')
             _img.save(_buf, format='PNG', optimize=True)
             st.session_state['preview_image_bytes'] = _buf.getvalue()
+            st.session_state['preview_download_bytes'] = _dl_bytes
             st.session_state['preview_result'] = result
             st.session_state['preview_color_data'] = color_data
             st.session_state['preview_filename'] = uploaded_file.name
@@ -2013,9 +2025,10 @@ Despite the file extension, this is not a true vector file. It's a raster image 
                 swatch_html += '</div>'
                 st.markdown(swatch_html, unsafe_allow_html=True)
         st.markdown("---")
+        _dl_data = st.session_state.get('preview_download_bytes') or img_bytes
         st.download_button(
-            label="⬇️ Download Preview (PNG)",
-            data=img_bytes,
+            label="⬇️ Download PNG (transparent background)",
+            data=_dl_data,
             file_name=f"{st.session_state.get('preview_filename', 'preview').rsplit('.', 1)[0]}_preview.png",
             mime="image/png",
             use_container_width=True
@@ -2025,6 +2038,7 @@ Despite the file extension, this is not a true vector file. It's a raster image 
             st.session_state.pop('preview_result', None)
             st.session_state.pop('preview_color_data', None)
             st.session_state.pop('preview_filename', None)
+            st.session_state.pop('preview_download_bytes', None)
             st.session_state.pop('artbot_file_context', None)
             st.session_state['file_uploader_key'] = st.session_state.get('file_uploader_key', 0) + 1
             st.rerun()
