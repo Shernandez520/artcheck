@@ -1638,6 +1638,10 @@ st.markdown("""
         Ask ArtBot in the sidebar for expert guidance on file requirements, decoration methods, 
         and what to tell your customer.
     </div>
+    <div style="font-size:0.9rem;color:#9cb4d8;max-width:720px;line-height:1.6;margin-top:0.85rem;padding:0.65rem 0.9rem;background:rgba(102,126,234,0.08);border-left:3px solid #667eea;border-radius:4px;">
+        💡 <strong>Building a virtual on SAGE?</strong> Use the <strong>Download PNG</strong> button after analysis — 
+        ArtCheck delivers a transparent, trimmed-to-bounds image ready to drop straight onto your product mockup.
+    </div>
 </div>
 <hr style="border:none;border-top:1px solid #333;margin-bottom:1.5rem;">
 """, unsafe_allow_html=True)
