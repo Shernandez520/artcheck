@@ -4,7 +4,7 @@ exec streamlit run app_with_embroidery.py \
      --server.port=8501 \
      --server.address=0.0.0.0 \
      --server.headless=true \
-     --server.maxUploadSize=200 \
+     --server.maxUploadSize=50 \
      --server.enableCORS=false \
      --server.enableXsrfProtection=false \
      --browser.gatherUsageStats=false

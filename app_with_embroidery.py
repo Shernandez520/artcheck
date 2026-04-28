@@ -1659,7 +1659,7 @@ uploaded_file = st.file_uploader(
     key=f"uploader_{st.session_state.get('file_uploader_key', 0)}",
     type=['ai', 'eps', 'pdf', 'svg', 'cdr', 'xcf', 'indd', 'dst', 'pes', 'exp', 'jef', 'vp3', 'xxx', 'u01',
           'png', 'jpg', 'jpeg', 'gif', 'tiff', 'tif', 'bmp', 'webp'],
-    help="Supports vector, embroidery, and raster image files up to 200MB"
+    help="Supports vector, embroidery, and raster image files up to 50MB"
 )
 
 if uploaded_file:
