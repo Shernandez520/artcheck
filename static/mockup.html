@@ -462,6 +462,14 @@
           <input type="range" id="opacitySlider" min="10" max="100" value="100">
         </div>
 
+        <div class="control">
+          <div class="control-label">
+            <span>Wrap <span style="color:var(--text-faint);font-weight:400;font-size:0.72rem;">tumblers/mugs</span></span>
+            <span class="control-value" id="wrapVal">0%</span>
+          </div>
+          <input type="range" id="wrapSlider" min="0" max="90" value="0">
+        </div>
+
         <div class="btn-row" style="margin-top:14px;">
           <button class="btn btn-secondary" id="resetBtn">↻ Reset</button>
         </div>
@@ -514,6 +522,7 @@ const state = {
   scale: 0.30,                    // fraction of product width
   rotation: 0,                    // degrees
   opacity: 1.0,
+  wrap: 0,                        // 0-90 percent — cylindrical wrap amount
 };
 
 const canvas = document.getElementById('canvas');
@@ -620,8 +629,39 @@ function render() {
     ctx.globalAlpha = state.opacity;
     ctx.translate(cx, cy);
     ctx.rotate(state.rotation * Math.PI / 180);
-    ctx.drawImage(state.artwork, -targetW / 2, -targetH / 2, targetW, targetH);
+    if (state.wrap > 0) {
+      drawCylinderWrap(ctx, state.artwork, -targetW / 2, -targetH / 2, targetW, targetH, state.wrap / 100);
+    } else {
+      ctx.drawImage(state.artwork, -targetW / 2, -targetH / 2, targetW, targetH);
+    }
     ctx.restore();
+  }
+}
+
+/* ----------- Cylindrical wrap (for tumblers/mugs/bottles) -----------
+   Slices the artwork into vertical strips and projects each onto a
+   virtual cylinder. The center remains full-width; edges foreshorten
+   following cos(angle) and shift toward center following sin(angle).
+   wrapAmount: 0 = flat, 1 = full 180° wrap (rarely useful past ~0.6) */
+function drawCylinderWrap(ctx, img, x, y, w, h, wrapAmount) {
+  const slices = 100;
+  const arcAngle = Math.PI * wrapAmount;        // total arc subtended
+  const R = w / arcAngle;                        // radius such that arc length = w
+  const cx = x + w / 2;                          // center x of bounding box
+  const dTheta = arcAngle / slices;
+  const srcSliceW = img.naturalWidth / slices;
+
+  for (let i = 0; i < slices; i++) {
+    const theta = -arcAngle / 2 + (i + 0.5) * dTheta;
+    const sX = i * srcSliceW;
+    const dX = cx + R * Math.sin(theta);
+    const dW = R * Math.cos(theta) * dTheta;
+    if (dW <= 0) continue;
+    ctx.drawImage(
+      img,
+      sX, 0, srcSliceW, img.naturalHeight,
+      dX - dW / 2, y, dW, h
+    );
   }
 }
 
@@ -719,17 +759,27 @@ opacitySlider.addEventListener('input', (e) => {
   render();
 });
 
+const wrapSlider = document.getElementById('wrapSlider');
+wrapSlider.addEventListener('input', (e) => {
+  state.wrap = parseFloat(e.target.value);
+  document.getElementById('wrapVal').textContent = e.target.value + '%';
+  render();
+});
+
 document.getElementById('resetBtn').addEventListener('click', () => {
   state.position = { x: 0.5, y: 0.5 };
   state.scale = 0.30;
   state.rotation = 0;
   state.opacity = 1.0;
+  state.wrap = 0;
   scaleSlider.value = 30;
   rotationSlider.value = 0;
   opacitySlider.value = 100;
+  wrapSlider.value = 0;
   document.getElementById('scaleVal').textContent = '30%';
   document.getElementById('rotationVal').textContent = '0°';
   document.getElementById('opacityVal').textContent = '100%';
+  document.getElementById('wrapVal').textContent = '0%';
   render();
 });
 
