@@ -1851,8 +1851,22 @@ if uploaded_file:
             _dl_result = generator.generate_preview(tmp_path, 'transparent_alpha')
             _dl_bytes = None
             if _dl_result and os.path.exists(_dl_result['image']):
-                with open(_dl_result['image'], 'rb') as _dlf:
-                    _dl_bytes = _dlf.read()
+                # Trim transparent edges so the PNG drops cleanly onto mockups
+                try:
+                    import io as _io
+                    _dl_img = Image.open(_dl_result['image'])
+                    if _dl_img.mode != 'RGBA':
+                        _dl_img = _dl_img.convert('RGBA')
+                    _bbox = _dl_img.split()[3].getbbox()
+                    if _bbox:
+                        _dl_img = _dl_img.crop(_bbox)
+                    _dl_buf = _io.BytesIO()
+                    _dl_img.save(_dl_buf, format='PNG', optimize=True)
+                    _dl_bytes = _dl_buf.getvalue()
+                except Exception:
+                    # Fall back to untrimmed bytes if anything goes wrong
+                    with open(_dl_result['image'], 'rb') as _dlf:
+                        _dl_bytes = _dlf.read()
 
             color_data = None
             file_ext = Path(uploaded_file.name).suffix.lower()
