@@ -8,11 +8,9 @@ CLOUD-OPTIMIZED VERSION - Uses CairoSVG, pdf2image, reportlab instead of Inkscap
 import streamlit as st
 import subprocess
 import os
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 from pathlib import Path
-import shutil
 import tempfile
-import json
 
 def inject_ga():
     GA_ID = "G-E1711T2D9R"
@@ -397,7 +395,6 @@ class PreviewGenerator:
         try:
             import fitz
             doc = fitz.open(input_file)
-            total_pages = len(doc)
             vector_path_count = 0
             raster_image_count = 0
             for page in doc:
@@ -876,7 +873,7 @@ class ColorExtractor:
 
             # Get color space info
             try:
-                page_dict = page.get_text("dict")
+                page.get_text("dict")
                 results['color_space'] = 'CMYK/Mixed'
             except:
                 pass
@@ -1438,7 +1435,7 @@ def build_artbot_system_prompt():
     if not ctx:
         return ARTBOT_SYSTEM_PROMPT
 
-    lines = [f"\n\n--- CURRENT FILE CONTEXT ---"]
+    lines = ["\n\n--- CURRENT FILE CONTEXT ---"]
     lines.append(f"The user has uploaded a file called '{ctx['filename']}' and ArtCheck has analyzed it.")
     lines.append(f"File type: {ctx.get('file_type', 'unknown').title()}")
 
@@ -1524,8 +1521,6 @@ with st.sidebar:
         st.session_state.artbot_history.append({"role": "user", "content": question})
         try:
             import anthropic
-            import os
-            import os
             api_key = os.environ.get("ANTHROPIC_API_KEY")
             if not api_key:
                 try:
@@ -1738,11 +1733,18 @@ if uploaded_file:
                             st.session_state.bg_type_raster_pdf = _val
                             st.rerun()
                 st.caption(f"Background: **{st.session_state.bg_type_raster_pdf.title()}**")
-                # Apply background to extracted image
+                # Apply background to extracted image — downsize first to save memory
                 from PIL import Image as _PIL_Image
                 _preview_img = _PIL_Image.open(_img_tmp).convert('RGBA')
+                _max_dim = 1200
+                if max(_preview_img.size) > _max_dim:
+                    _ratio = _max_dim / max(_preview_img.size)
+                    _preview_img = _preview_img.resize(
+                        (int(_preview_img.width * _ratio), int(_preview_img.height * _ratio)),
+                        _PIL_Image.LANCZOS
+                    )
                 _bg = st.session_state.bg_type_raster_pdf
-                if _bg == 'light':
+                if _bg in ('light', 'auto'):
                     _bg_layer = _PIL_Image.new('RGBA', _preview_img.size, (255, 255, 255, 255))
                     _bg_layer.paste(_preview_img, mask=_preview_img.split()[3])
                     _preview_img = _bg_layer.convert('RGB')
@@ -1750,15 +1752,14 @@ if uploaded_file:
                     _bg_layer = _PIL_Image.new('RGBA', _preview_img.size, (30, 30, 30, 255))
                     _bg_layer.paste(_preview_img, mask=_preview_img.split()[3])
                     _preview_img = _bg_layer.convert('RGB')
-                elif _bg == 'auto':
-                    # Default auto to light background (safe, no memory spike)
-                    _bg_layer = _PIL_Image.new('RGBA', _preview_img.size, (255, 255, 255, 255))
-                    _bg_layer.paste(_preview_img, mask=_preview_img.split()[3])
-                    _preview_img = _bg_layer.convert('RGB')
+                # 'transparent' falls through with no background applied
                 st.image(_preview_img, caption="Extracted raster image from PDF", use_container_width=True)
-                # Run raster analysis on extracted image
-                _raster_analyzer = RasterAnalyzer()
-                _analysis = _raster_analyzer.analyze(_img_tmp)
+                # Run raster analysis (cached so it doesn't re-run on bg button clicks)
+                _analysis_key = f"raster_pdf_analysis_{uploaded_file.name}_{uploaded_file.size}"
+                if _analysis_key not in st.session_state:
+                    _raster_analyzer = RasterAnalyzer()
+                    st.session_state[_analysis_key] = _raster_analyzer.analyze(_img_tmp)
+                _analysis = st.session_state[_analysis_key]
                 # Clean up
                 if os.path.exists(_img_tmp): os.unlink(_img_tmp)
                 if os.path.exists(_pdf_tmp_path): os.unlink(_pdf_tmp_path)
@@ -1778,7 +1779,7 @@ if uploaded_file:
                 st.stop()
             else:
                 _doc.close()
-        except Exception as _e:
+        except Exception:
             pass
         finally:
             if os.path.exists(_pdf_tmp_path):
@@ -2040,6 +2041,10 @@ Despite the file extension, this is not a true vector file. It's a raster image 
             st.session_state.pop('preview_filename', None)
             st.session_state.pop('preview_download_bytes', None)
             st.session_state.pop('artbot_file_context', None)
+            # Clear any raster-in-PDF caches
+            for _k in list(st.session_state.keys()):
+                if _k.startswith('raster_pdf_bytes_') or _k.startswith('raster_pdf_analysis_'):
+                    del st.session_state[_k]
             st.session_state['file_uploader_key'] = st.session_state.get('file_uploader_key', 0) + 1
             st.rerun()
     if color_data:
