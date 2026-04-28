@@ -39,18 +39,23 @@ st.set_page_config(
 # ============================================================================
 # ============================================================================
 # MOCKUP BUILDER HANDOFF STORE
-# Module-level dict for passing artwork from analysis tab to mockup tab.
+# Cross-session dict for passing artwork from analysis tab to mockup tab.
+# @st.cache_resource keeps the dict alive across reruns and sessions —
+# module-level state alone gets wiped each rerun.
 # Tokens are single-use; entries auto-expire after 5 minutes.
 # ============================================================================
-_MOCKUP_HANDOFF = {}
+@st.cache_resource
+def _get_mockup_handoff_store():
+    return {}
 
 def _cleanup_mockup_handoff():
     """Drop handoff entries older than 5 minutes."""
     import time as _time
+    _store = _get_mockup_handoff_store()
     _now = _time.time()
-    _stale = [_k for _k, _v in _MOCKUP_HANDOFF.items() if _now - _v[2] > 300]
+    _stale = [_k for _k, _v in _store.items() if _now - _v[2] > 300]
     for _k in _stale:
-        _MOCKUP_HANDOFF.pop(_k, None)
+        _store.pop(_k, None)
 
 
 if st.query_params.get("mockup"):
@@ -62,8 +67,9 @@ if st.query_params.get("mockup"):
 
         # Preload artwork if a valid token was passed
         _token = st.query_params.get("token", "")
-        if _token and _token in _MOCKUP_HANDOFF:
-            _art_bytes, _art_name, _ = _MOCKUP_HANDOFF.pop(_token)
+        _store = _get_mockup_handoff_store()
+        if _token and _token in _store:
+            _art_bytes, _art_name, _ = _store.pop(_token)
             _b64_data = _b64.b64encode(_art_bytes).decode("ascii")
             _safe_name = _art_name.replace('"', '').replace("'", "")
             _inject = (
@@ -2112,16 +2118,17 @@ Despite the file extension, this is not a true vector file. It's a raster image 
         )
         # Mint a one-time token so the Mockup Builder can pre-load this artwork
         import secrets as _secrets, time as _time
+        _store = _get_mockup_handoff_store()
         _existing_token = st.session_state.get('mockup_handoff_token')
-        if _existing_token and _existing_token in _MOCKUP_HANDOFF:
+        if _existing_token and _existing_token in _store:
             # Refresh timestamp so it doesn't expire while user is browsing
-            _b, _n, _ = _MOCKUP_HANDOFF[_existing_token]
-            _MOCKUP_HANDOFF[_existing_token] = (_b, _n, _time.time())
+            _b, _n, _ = _store[_existing_token]
+            _store[_existing_token] = (_b, _n, _time.time())
             _mockup_token = _existing_token
         else:
             _mockup_token = _secrets.token_urlsafe(8)
             _art_filename = f"{st.session_state.get('preview_filename', 'artwork').rsplit('.', 1)[0]}_preview.png"
-            _MOCKUP_HANDOFF[_mockup_token] = (_dl_data, _art_filename, _time.time())
+            _store[_mockup_token] = (_dl_data, _art_filename, _time.time())
             st.session_state['mockup_handoff_token'] = _mockup_token
             _cleanup_mockup_handoff()
         st.markdown(
@@ -2145,7 +2152,7 @@ Despite the file extension, this is not a true vector file. It's a raster image 
             # Clear mockup handoff if any
             _old_token = st.session_state.pop('mockup_handoff_token', None)
             if _old_token:
-                _MOCKUP_HANDOFF.pop(_old_token, None)
+                _get_mockup_handoff_store().pop(_old_token, None)
             # Clear any raster-in-PDF caches
             for _k in list(st.session_state.keys()):
                 if _k.startswith('raster_pdf_bytes_') or _k.startswith('raster_pdf_analysis_'):

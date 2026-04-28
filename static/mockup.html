@@ -213,6 +213,30 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .dropzone-clear {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.65);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 0.95rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: all 0.15s ease;
+    z-index: 2;
+  }
+  .dropzone-clear:hover {
+    background: var(--danger);
+    transform: scale(1.1);
+  }
   input[type="file"] { display: none; }
 
   /* Sliders */
@@ -582,18 +606,82 @@ function updateProductZoneThumb(file) {
   const zone = document.getElementById('productZone');
   zone.classList.add('loaded');
   zone.innerHTML = `
+    <button class="dropzone-clear" type="button" data-clear="product" title="Remove">×</button>
     <img class="dropzone-thumb" src="${URL.createObjectURL(file)}">
     <div class="dropzone-filename">${file.name}</div>
   `;
+  zone.querySelector('[data-clear]').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clearProduct();
+  });
 }
 
 function updateArtworkZoneThumb(file) {
   const zone = document.getElementById('artworkZone');
   zone.classList.add('loaded');
   zone.innerHTML = `
+    <button class="dropzone-clear" type="button" data-clear="artwork" title="Remove">×</button>
     <img class="dropzone-thumb" src="${URL.createObjectURL(file)}">
     <div class="dropzone-filename">${file.name}</div>
   `;
+  zone.querySelector('[data-clear]').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clearArtwork();
+  });
+}
+
+function resetProductZone() {
+  const zone = document.getElementById('productZone');
+  zone.classList.remove('loaded');
+  zone.innerHTML = `
+    <div class="dropzone-icon">🛍️</div>
+    <div class="dropzone-label">Drop product photo</div>
+    <div class="dropzone-hint">or click to browse</div>
+  `;
+  document.getElementById('productInput').value = '';
+}
+
+function resetArtworkZone() {
+  const zone = document.getElementById('artworkZone');
+  zone.classList.remove('loaded');
+  zone.innerHTML = `
+    <div class="dropzone-icon">🎨</div>
+    <div class="dropzone-label">Drop your logo PNG</div>
+    <div class="dropzone-hint">transparent background recommended</div>
+  `;
+  document.getElementById('artworkInput').value = '';
+}
+
+function clearProduct() {
+  state.product = null;
+  state.productName = '';
+  resetProductZone();
+  // If no artwork either, fall back to empty state
+  canvas.style.display = 'none';
+  emptyState.style.display = 'block';
+  if (!state.artwork) {
+    controlsPanel.style.display = 'none';
+    downloadPanel.style.display = 'none';
+    dragTip.style.display = 'none';
+  }
+}
+
+function clearArtwork() {
+  state.artwork = null;
+  state.artworkName = '';
+  resetArtworkZone();
+  controlsPanel.style.display = 'none';
+  downloadPanel.style.display = 'none';
+  dragTip.style.display = 'none';
+  if (state.product) {
+    canvas.classList.add('no-artwork');
+    render();  // redraw product alone
+  } else {
+    canvas.style.display = 'none';
+    emptyState.style.display = 'block';
+  }
 }
 
 /* ----------- Canvas setup ----------- */
