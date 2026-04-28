@@ -1869,6 +1869,8 @@ if uploaded_file:
                 _ratio = _max / max(_img.width, _img.height)
                 _img = _img.resize((int(_img.width * _ratio), int(_img.height * _ratio)), _PILResize.LANCZOS)
             _buf = io.BytesIO()
+            if _img.mode not in ('RGBA', 'LA'):
+                _img = _img.convert('RGBA')
             _img.save(_buf, format='PNG', optimize=True)
             st.session_state['preview_image_bytes'] = _buf.getvalue()
             st.session_state['preview_result'] = result
