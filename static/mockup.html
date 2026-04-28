@@ -27,6 +27,31 @@
     --radius-sm: 6px;
     --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
     --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.5);
+    --canvas-checker: #1a1f2b;
+    --canvas-bg: #131822;
+    --thumb-checker: #2a3142;
+    --thumb-bg: #1c2230;
+  }
+
+  :root[data-theme="light"] {
+    --bg: #f6f8fb;
+    --surface: #ffffff;
+    --surface-2: #f0f3f8;
+    --border: #d8dde6;
+    --text: #1a1f2e;
+    --text-dim: #5a6577;
+    --text-faint: #8b95a7;
+    --accent: #5a6fd1;
+    --accent-2: #694694;
+    --accent-glow: rgba(102, 126, 234, 0.18);
+    --success: #1e7d36;
+    --danger: #c62a36;
+    --shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    --shadow-lg: 0 10px 32px rgba(0, 0, 0, 0.12);
+    --canvas-checker: #e0e5ed;
+    --canvas-bg: #f0f3f8;
+    --thumb-checker: #d8dde6;
+    --thumb-bg: #f0f3f8;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -106,6 +131,38 @@
     color: var(--text);
     border-color: var(--accent);
     background: var(--accent-glow);
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .header-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 1.05rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.18s ease;
+    padding: 0;
+  }
+  .header-btn:hover {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+    transform: rotate(15deg);
+  }
+
+  /* Smooth theme transitions */
+  html, body, .panel, .canvas-wrap, .dropzone, .btn, .back-link, .header-btn {
+    transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
   }
 
   /* ============================================================
@@ -196,13 +253,13 @@
     height: 80px;
     object-fit: contain;
     background:
-      linear-gradient(45deg, #2a3142 25%, transparent 25%),
-      linear-gradient(-45deg, #2a3142 25%, transparent 25%),
-      linear-gradient(45deg, transparent 75%, #2a3142 75%),
-      linear-gradient(-45deg, transparent 75%, #2a3142 75%);
+      linear-gradient(45deg, var(--thumb-checker) 25%, transparent 25%),
+      linear-gradient(-45deg, var(--thumb-checker) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, var(--thumb-checker) 75%),
+      linear-gradient(-45deg, transparent 75%, var(--thumb-checker) 75%);
     background-size: 12px 12px;
     background-position: 0 0, 0 6px, 6px -6px, -6px 0px;
-    background-color: #1c2230;
+    background-color: var(--thumb-bg);
     border-radius: 4px;
   }
   .dropzone-filename {
@@ -352,13 +409,13 @@
   .canvas-stage {
     flex: 1;
     background:
-      linear-gradient(45deg, #1a1f2b 25%, transparent 25%),
-      linear-gradient(-45deg, #1a1f2b 25%, transparent 25%),
-      linear-gradient(45deg, transparent 75%, #1a1f2b 75%),
-      linear-gradient(-45deg, transparent 75%, #1a1f2b 75%);
+      linear-gradient(45deg, var(--canvas-checker) 25%, transparent 25%),
+      linear-gradient(-45deg, var(--canvas-checker) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, var(--canvas-checker) 75%),
+      linear-gradient(-45deg, transparent 75%, var(--canvas-checker) 75%);
     background-size: 20px 20px;
     background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
-    background-color: #131822;
+    background-color: var(--canvas-bg);
     border-radius: var(--radius-sm);
     position: relative;
     overflow: hidden;
@@ -428,7 +485,12 @@
       <h1>Mockup Builder</h1>
       <span class="subtitle">by ArtCheck</span>
     </div>
-    <a href="/" class="back-link" id="backLink">← Back to ArtCheck</a>
+    <div class="header-actions">
+      <button class="header-btn" id="themeToggle" title="Toggle theme" aria-label="Toggle theme">
+        <span id="themeIcon">🌙</span>
+      </button>
+      <a href="/" class="back-link" id="backLink">← Back to ArtCheck</a>
+    </div>
   </header>
 
   <div class="workspace">
@@ -938,16 +1000,63 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
-/* ----------- iframe-aware Back link ----------- */
+/* ----------- iframe-aware Back link -----------
+   Streamlit's components.html serves us in a sandboxed iframe from a
+   different origin, so window.parent.location writes get blocked silently.
+   window.top works under a more permissive policy for top-level navigation.
+   Fallback to window.open which always works as a last resort. */
 document.getElementById('backLink').addEventListener('click', (e) => {
   e.preventDefault();
-  // If we're inside an iframe (Streamlit components.html), navigate the parent
-  if (window.parent !== window) {
-    window.parent.location.href = '/';
-  } else {
-    window.location.href = '/';
-  }
+  const targetUrl = '/';
+  // Try window.top first — works when same-origin or sandbox allow-top-navigation
+  try {
+    if (window.top && window.top !== window) {
+      window.top.location.href = targetUrl;
+      return;
+    }
+  } catch (err) { /* cross-origin block */ }
+  // Try window.parent next
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.location.href = targetUrl;
+      return;
+    }
+  } catch (err) { /* cross-origin block */ }
+  // Fallback: open in a new tab (always works)
+  window.open(targetUrl, '_top') || window.open(targetUrl, '_blank');
 });
+
+/* ----------- Theme toggle (light/dark) ----------- */
+(function initTheme() {
+  const STORAGE_KEY = 'mockup_theme';
+  const root = document.documentElement;
+  const icon = document.getElementById('themeIcon');
+  const btn = document.getElementById('themeToggle');
+
+  function applyTheme(theme) {
+    if (theme === 'light') {
+      root.setAttribute('data-theme', 'light');
+      icon.textContent = '☀️';
+    } else {
+      root.removeAttribute('data-theme');
+      icon.textContent = '🌙';
+    }
+  }
+
+  // Read saved theme (try localStorage, but it may fail in sandboxed iframes)
+  let saved = 'dark';
+  try {
+    saved = localStorage.getItem(STORAGE_KEY) || 'dark';
+  } catch (err) { /* localStorage blocked */ }
+  applyTheme(saved);
+
+  btn.addEventListener('click', () => {
+    const current = root.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    const next = current === 'light' ? 'dark' : 'light';
+    applyTheme(next);
+    try { localStorage.setItem(STORAGE_KEY, next); } catch (err) { /* ignore */ }
+  });
+})();
 
 /* ----------- Auto-load handoff artwork from ArtCheck -----------
    When ArtCheck mints a token and links here, Python injects the
