@@ -1,4 +1,5 @@
-#!/usr/bin/env python3"""
+#!/usr/bin/env python3
+"""
 Inject GA4 tag into Streamlit's index.html at container startup.
 Run this before launching Streamlit.
 """
