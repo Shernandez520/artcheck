@@ -7,4 +7,8 @@ exec streamlit run app_with_embroidery.py \
      --server.maxUploadSize=50 \
      --server.enableCORS=false \
      --server.enableXsrfProtection=false \
-     --browser.gatherUsageStats=false
+     --server.enableWebsocketCompression=false \
+     --server.fileWatcherType=none \
+     --browser.gatherUsageStats=false \
+     --browser.serverAddress=www.artcheck.app \
+     --browser.serverPort=443
