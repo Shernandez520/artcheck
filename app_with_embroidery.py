@@ -5,6 +5,22 @@ NOW WITH: AI-powered production artist assistant
 CLOUD-OPTIMIZED VERSION - Uses CairoSVG, pdf2image, reportlab instead of Inkscape/ImageMagick
 """
 
+# Patch Tornado to send server-side WebSocket pings — prevents Railway proxy
+# from force-closing connections after its absolute idle/connection limit.
+# Must run before Streamlit starts its server, so it goes here at module top.
+try:
+    import tornado.websocket as _tws
+    _orig_get = _tws.WebSocketHandler.get
+
+    async def _ws_get_with_ping(self, *args, **kwargs):
+        self.application.settings.setdefault('websocket_ping_interval', 20)
+        self.application.settings.setdefault('websocket_ping_timeout', 60)
+        return await _orig_get(self, *args, **kwargs)
+
+    _tws.WebSocketHandler.get = _ws_get_with_ping
+except Exception:
+    pass
+
 import streamlit as st
 import subprocess
 import os
