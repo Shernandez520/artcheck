@@ -17,6 +17,15 @@ GA_SCRIPT = f"""
       gtag('js', new Date());
       gtag('config', '{GA_ID}');
     </script>
+    <!-- WebSocket keepalive: prevents Railway proxy from dropping idle connections -->
+    <script>
+      (function() {{
+        function ping() {{
+          fetch('/_stcore/health').catch(function(){{}});
+        }}
+        setInterval(ping, 30000);
+      }})();
+    </script>
 """
 
 def find_index_html():
