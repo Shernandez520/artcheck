@@ -3,7 +3,6 @@
 Inject GA4 tag into Streamlit's index.html at container startup.
 Run this before launching Streamlit.
 """
-import os
 import glob
 
 GA_ID = "G-E1711T2D9R"
@@ -17,34 +16,10 @@ GA_SCRIPT = f"""
       gtag('js', new Date());
       gtag('config', '{GA_ID}');
     </script>
-    <!-- WebSocket keepalive: prevents Railway proxy from dropping idle connections -->
+    <!-- HTTP health ping: belt-and-suspenders keepalive alongside Tornado WS pings -->
     <script>
       (function() {{
-        var _stWs = null;
-        var _origWS = window.WebSocket;
-
-        // Intercept WebSocket constructor to capture Streamlit's stream connection
-        function WSProxy(url, protocols) {{
-          var ws = protocols ? new _origWS(url, protocols) : new _origWS(url);
-          if (url && url.indexOf('_stcore') > -1) {{
-            _stWs = ws;
-          }}
-          return ws;
-        }}
-        WSProxy.prototype = _origWS.prototype;
-        WSProxy.CONNECTING = _origWS.CONNECTING;
-        WSProxy.OPEN = _origWS.OPEN;
-        WSProxy.CLOSING = _origWS.CLOSING;
-        WSProxy.CLOSED = _origWS.CLOSED;
-        window.WebSocket = WSProxy;
-
         setInterval(function() {{
-          // Send an empty binary frame through the WebSocket — this is what
-          // Railway's proxy actually monitors. An empty protobuf BackMsg is a no-op.
-          if (_stWs && _stWs.readyState === 1) {{
-            try {{ _stWs.send(new ArrayBuffer(0)); }} catch(e) {{}}
-          }}
-          // Also HTTP ping as belt-and-suspenders
           fetch('/_stcore/health').catch(function(){{}});
         }}, 20000);
       }})();
