@@ -1906,6 +1906,11 @@ if uploaded_file:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
+        # Cache for re-display after ArtBot reruns (file uploader loses state on rerun)
+        st.session_state['_raster_display_bytes'] = uploaded_file.getvalue()
+        st.session_state['_raster_analysis'] = analysis
+        st.session_state['_raster_filename'] = uploaded_file.name
+
         # Store context for ArtBot
         st.session_state['artbot_file_context'] = {
             'filename': uploaded_file.name,
@@ -2030,6 +2035,15 @@ if uploaded_file:
                 'embroidery_info': result.get('embroidery_info'),
             }
         st.rerun()  # Rerun so session state block handles all rendering cleanly
+
+# Re-display raster image from cache when file uploader loses state after ArtBot reruns
+if not uploaded_file and st.session_state.get('_raster_display_bytes') and st.session_state.get('_raster_analysis'):
+    st.image(st.session_state['_raster_display_bytes'], caption="Your Image", use_container_width=True)
+    render_raster_results(st.session_state['_raster_analysis'], st.session_state.get('_raster_filename', ''))
+    _rfn = st.session_state.get('_raster_filename', 'artwork')
+    if _rfn.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.tiff', '.tif', '.bmp', '.webp')):
+        st.markdown("---")
+        _render_mockup_builder_button(st.session_state['_raster_display_bytes'], _rfn.rsplit('.', 1)[0])
 
 # Render stored preview from session state (persists across ArtBot reruns)
 if st.session_state.get('preview_image_bytes') and st.session_state.get('preview_result'):
