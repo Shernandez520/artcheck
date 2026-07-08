@@ -91,7 +91,7 @@ def _render_mockup_builder_button(art_bytes, filename_stem):
         _art_filename = f"{filename_stem}_preview.png"
         _store[_mockup_token] = (art_bytes, _art_filename, _time.time())
         st.session_state['mockup_handoff_token'] = _mockup_token
-        _cleanup_mockup_handoff()
+    _cleanup_mockup_handoff()
     st.markdown(
         f'<a href="?mockup=1&token={_mockup_token}" target="_blank" '
         'style="display:block;text-align:center;padding:0.6rem 1rem;margin-top:0.5rem;'
@@ -1783,6 +1783,9 @@ if uploaded_file:
         st.session_state.pop('preview_filename', None)
         st.session_state.pop('artbot_file_context', None)
         st.session_state.pop('_raster_context_synced', None)
+        st.session_state.pop('_raster_display_bytes', None)
+        st.session_state.pop('_raster_analysis', None)
+        st.session_state.pop('_raster_filename', None)
 
     # Check for InDesign files
     if uploaded_file.name.lower().endswith('.indd'):
@@ -1809,6 +1812,12 @@ if uploaded_file:
             st.session_state.pop('preview_result', None)
             st.session_state.pop('preview_color_data', None)
             st.session_state.pop('preview_filename', None)
+            st.session_state.pop('preview_image_bytes', None)
+            st.session_state.pop('preview_download_bytes', None)
+            st.session_state.pop('_raster_display_bytes', None)
+            st.session_state.pop('_raster_analysis', None)
+            st.session_state.pop('_raster_filename', None)
+            st.session_state.pop('_raster_context_synced', None)
             st.rerun()
 
     # Check for raster-in-PDF before normal vector flow
@@ -2205,6 +2214,9 @@ Despite the file extension, this is not a true vector file. It's a raster image 
             st.session_state.pop('preview_download_bytes', None)
             st.session_state.pop('artbot_file_context', None)
             st.session_state.pop('_raster_context_synced', None)
+            st.session_state.pop('_raster_display_bytes', None)
+            st.session_state.pop('_raster_analysis', None)
+            st.session_state.pop('_raster_filename', None)
             # Clear mockup handoff if any
             _old_token = st.session_state.pop('mockup_handoff_token', None)
             if _old_token:
