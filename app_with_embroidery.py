@@ -306,7 +306,7 @@ def ask_artbot(question, conversation_history=None):
         # This is where the actual API call would be:
         # client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
         # response = client.messages.create(
-        #     model="claude-sonnet-4-20250514",
+        #     model="claude-sonnet-4-6",
         #     max_tokens=1000,
         #     system=ARTBOT_SYSTEM_PROMPT,
         #     messages=messages
@@ -1643,7 +1643,7 @@ with st.sidebar:
             for attempt in range(max_retries):
                 try:
                     with client.messages.stream(
-                        model="claude-sonnet-4-20250514",
+                        model="claude-sonnet-4-6",
                         max_tokens=1000,
                         system=build_artbot_system_prompt(),
                         messages=st.session_state.artbot_history[-8:].copy()

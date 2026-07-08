@@ -211,7 +211,7 @@ def ask_artbot(question, conversation_history=None):
         # This is where the actual API call would be:
         # client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
         # response = client.messages.create(
-        #     model="claude-sonnet-4-20250514",
+        #     model="claude-sonnet-4-6",
         #     max_tokens=1000,
         #     system=ARTBOT_SYSTEM_PROMPT,
         #     messages=messages
@@ -627,7 +627,7 @@ with st.sidebar:
                 placeholder = st.empty()
 
                 with client.messages.stream(
-                    model="claude-sonnet-4-20250514",
+                    model="claude-sonnet-4-6",
                     max_tokens=1000,
                     system=ARTBOT_SYSTEM_PROMPT,
                     messages=messages
