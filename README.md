@@ -1,76 +1,89 @@
 # 🎨 ArtCheck
 
-**Save your art department 15+ hours per week**
+**Instant art file screening for promotional products professionals.**
 
-Automated artwork preview generation and AI-powered production guidance built specifically for promotional products suppliers.
+Upload any vector, embroidery, or image file → get an instant preview, Pantone/CMYK color analysis, and production suitability check. No art department required.
+
+**🔗 Live app: [www.artcheck.app](https://www.artcheck.app)** — free to try, no signup.
+
+![Python](https://img.shields.io/badge/Python-3.11-blue) ![Streamlit](https://img.shields.io/badge/Streamlit-1.43-red) ![Claude](https://img.shields.io/badge/AI-Claude%20Sonnet-orange) ![Deployed](https://img.shields.io/badge/Deployed-Railway-blueviolet)
+
+---
 
 ## The Problem
 
-Your art team spends countless hours:
-- Taking screenshots of artwork files for sales reps
-- Answering the same production questions over and over
-- Explaining technical constraints to customers who don't speak "print"
+In the promotional products industry, art departments lose hours every day to interruptions that aren't design work:
 
-Meanwhile, sales reps interrupt artists for simple questions because there's no self-service option.
+- "Can you send me a screenshot of this file?"
+- "What Pantone is this logo?"
+- "Will this work for embroidery?"
+- "This file won't open."
 
-## The Solution
+Sales reps and CSRs have no self-service option, so every question stops an artist mid-project. After 20+ years in promo production, I built the tool I always wished existed.
 
-ArtCheck gives you:
+## What ArtCheck Does
 
-### 1. Instant Previews
-Upload AI, EPS, SVG, or embroidery files → Get production-ready previews in seconds
+### Instant Previews
+Upload `.ai`, `.eps`, `.pdf`, `.svg`, `.cdr`, or embroidery files (`.dst`, `.pes`, and more) and get a clean PNG preview in seconds — with smart background handling for the classic white-logo-on-white-page problem, and pan/zoom inspection.
 
-### 2. AI Production Assistant
-ArtBot answers common questions with 20+ years of industry knowledge:
-- File format requirements
-- Decoration method constraints
-- Color limitations
-- Customer communication scripts
+### Real Color Analysis (not pixel guessing)
+ArtCheck parses color data from the **file's internal structure before rasterization** — PDF content streams, PostScript operators, separation colorspaces — so it reports what production actually needs:
 
-### 3. Built for Promo
-Not a generic file converter - designed specifically for:
-- Screen printing constraints
-- Embroidery specifications
-- DTG workflows
-- Dye sublimation requirements
+- Spot colors shown as true Pantone names
+- CMYK values (including K% for grayscale work)
+- RGB flagged with a warning, because RGB is a red flag in promo production
 
-## Demo
+### Raster Suitability Check
+PNG/JPG uploads get a DPI analysis with usable print sizes at 300/200/150 DPI, a plain-English verdict (Production Ready / Marginal / Not Suitable), and exactly what to ask the customer for instead.
 
-🔗 Try it: [artcheck.streamlit.app](https://artcheck.streamlit.app)
+### ArtBot — AI Production Assistant
+A sidebar assistant with a senior-production-artist persona (powered by Claude). It sees your uploaded file's analysis and answers questions like "what does 'fonts not outlined' mean?" — including word-for-word scripts reps can send to customers.
 
-## Use Cases
+### Mockup Builder
+Drop your trimmed transparent PNG onto any product photo for a quick customer-facing mockup — no design software or SAGE login required.
 
-- **Sales reps** upload art without interrupting the design team
-- **Customers** see realistic previews instantly instead of waiting days
-- **Production teams** pre-screen problem files before they hit the queue
-- **CSRs** get AI-assisted responses to technical questions
+## Under the Hood
+
+For the technically curious — this is not a thin wrapper around a converter:
+
+- **Rendering pipeline:** PyMuPDF for PDF/AI (dynamic scaling, alpha-preserving), Ghostscript `pngalpha` for EPS, CairoSVG for SVG, pyembroidery for stitch files — each with fallbacks
+- **Color extraction:** multi-stage pipeline reading `/Separation` colorspace definitions, decompressed content-stream `scn`/`k` operators, and raw PANTONE string scanning; EPS goes through a Ghostscript→PDF→PyMuPDF conversion to reach parseable content streams
+- **Production hardening:** Dockerized on Railway, health-checked, WebSocket keepalive layered at three levels (Tornado server pings, client health pings, compression disabled) to survive proxy idle timeouts, memory-conscious lazy imports and resource caching for small-instance stability
+
+**Stack:** Python · Streamlit · PyMuPDF · Ghostscript · CairoSVG · pyembroidery · Pillow · Anthropic Claude API · Docker · Railway
+
+## Supported Files
+
+| Type | Formats |
+|------|---------|
+| Vector | .ai, .eps, .pdf, .svg, .cdr, .xcf |
+| Embroidery | .dst, .pes, .exp, .jef, .vp3, .xxx, .u01 |
+| Raster | .png, .jpg, .gif, .tiff, .bmp, .webp |
+
+## Privacy
+
+Files are processed in memory and discarded immediately. Nothing is stored, and nobody can see your files but you.
 
 ## Roadmap
 
-- [x] Vector file preview generation
-- [x] Embroidery file support
-- [x] AI production guidance
-- [ ] Pantone color detection
-- [ ] Decoration method pre-screening
+- [x] Vector, embroidery, and raster preview generation
+- [x] Spot color / Pantone detection with color-mode verdicts
+- [x] Raster print-suitability analysis
+- [x] AI production guidance with file awareness (ArtBot)
+- [x] Mockup Builder
+- [ ] Decoration method pre-screening (embroidery/screen print/laser rules engine)
 - [ ] Batch processing
-- [ ] User accounts & file history
+- [ ] Shareable preview links
+- [ ] Team accounts & file history
 
 ## Why ArtCheck Exists
 
 After 20+ years in promotional products production, I was tired of watching talented artists burn out answering the same basic questions over and over. ArtCheck exists so creative teams can finally focus on real design work again.
 
-## Built With
-
-Python • Streamlit • Ghostscript • Claude AI • 20 years of promotional products expertise
-
-## Status
-
-Currently onboarding early partners.
-
 ## Interested?
 
-For commercial licensing, API access, or to become an early partner, contact through GitHub.
+Currently onboarding early partners. For commercial licensing, API access, or to become an early partner: **artchecksupport@gmail.com** — or open an issue here.
 
 ## License
 
-See LICENSE.md for usage terms.
+Source-available for portfolio review and learning; commercial use requires a license. See [LICENSE.md](LICENSE.md).

@@ -1,13 +1,37 @@
 #!/usr/bin/env python3
 """
-Inject GA4 tag into Streamlit's index.html at container startup.
-Run this before launching Streamlit.
+Patch Streamlit's index.html at container startup:
+  1. Replace the generic <title>Streamlit</title> with ArtCheck branding
+  2. Inject SEO + social sharing meta tags (description, Open Graph, Twitter)
+     so shared links on LinkedIn/Facebook show ArtCheck, not "Streamlit"
+  3. Inject GA4 analytics tag
+  4. Inject WebSocket keepalive health ping (Railway proxy drops idle connections)
+Run this before launching Streamlit (see start.sh).
 """
 import glob
 
 GA_ID = "G-E1711T2D9R"
 
-GA_SCRIPT = f"""
+SITE_URL = "https://www.artcheck.app"
+SITE_TITLE = "ArtCheck — Instant Art File Checker for Promotional Products"
+SITE_DESCRIPTION = (
+    "Upload any vector, embroidery, or image file and get an instant preview, "
+    "Pantone/CMYK color analysis, and production suitability check. "
+    "Built for promo industry sales reps and CSRs — no art department needed."
+)
+
+HEAD_SNIPPET = f"""
+    <!-- SEO / social sharing -->
+    <meta name="description" content="{SITE_DESCRIPTION}">
+    <link rel="canonical" href="{SITE_URL}/">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{SITE_URL}/">
+    <meta property="og:site_name" content="ArtCheck">
+    <meta property="og:title" content="{SITE_TITLE}">
+    <meta property="og:description" content="{SITE_DESCRIPTION}">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="{SITE_TITLE}">
+    <meta name="twitter:description" content="{SITE_DESCRIPTION}">
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id={GA_ID}"></script>
     <script>
@@ -26,6 +50,7 @@ GA_SCRIPT = f"""
     </script>
 """
 
+
 def find_index_html():
     patterns = [
         "/usr/local/lib/python*/dist-packages/streamlit/static/index.html",
@@ -37,25 +62,34 @@ def find_index_html():
             return matches[0]
     return None
 
+
 def inject():
     path = find_index_html()
     if not path:
-        print("GA4: Could not find Streamlit index.html")
+        print("inject: Could not find Streamlit index.html")
         return
 
-    with open(path, 'r') as f:
+    with open(path, "r") as f:
         content = f.read()
 
+    # 1. Branded title (crawlers and link unfurlers read the raw HTML,
+    #    they never see the title Streamlit sets later via JavaScript)
+    if "<title>Streamlit</title>" in content:
+        content = content.replace(
+            "<title>Streamlit</title>", f"<title>{SITE_TITLE}</title>", 1
+        )
+        print("inject: Title replaced")
+
+    # 2-4. Meta tags + GA + keepalive
     if GA_ID in content:
-        print(f"GA4: Already injected into {path}")
-        return
+        print(f"inject: Head snippet already present in {path}")
+    else:
+        content = content.replace("</head>", f"{HEAD_SNIPPET}</head>", 1)
+        print(f"inject: Head snippet injected into {path}")
 
-    content = content.replace('</head>', f'{GA_SCRIPT}</head>', 1)
-
-    with open(path, 'w') as f:
+    with open(path, "w") as f:
         f.write(content)
 
-    print(f"GA4: Successfully injected into {path}")
 
 if __name__ == "__main__":
     inject()

@@ -26,3 +26,8 @@ tmp/
 uploads/
 user_data/
 Old versions/
+
+# Private business docs — never commit
+Legal CYA/
+FEEDBACK_LOG.md
+CLAUDE.local.md
