@@ -1809,74 +1809,6 @@ uploaded_file = st.file_uploader(
     help="Supports vector, embroidery, and raster image files up to 50MB"
 )
 
-# ============================================================================
-# SAMPLE FILES
-# Most first-time visitors don't have an art file open when they land. These
-# let anyone see a real result in one click. Each sample demonstrates a
-# different real-world scenario an art department deals with daily.
-# ============================================================================
-SAMPLE_FILES = [
-    {
-        "key": "spot",
-        "path": "samples/artcheck-sample-spot-color-vector.eps",
-        "button": "✅ Print-ready vector",
-        "caption": "Two-spot-color EPS — see Pantone detection",
-    },
-    {
-        "key": "rgb",
-        "path": "samples/artcheck-sample-rgb-problem.svg",
-        "button": "⚠️ RGB color problem",
-        "caption": "Screen-only color — flagged for production",
-    },
-    {
-        "key": "lowres",
-        "path": "samples/artcheck-sample-lowres-web.jpg",
-        "button": "❌ Low-res website grab",
-        "caption": "72 DPI JPG — too small to print",
-    },
-]
-
-
-class _SampleFile:
-    """Mimics the parts of Streamlit's UploadedFile that the app uses."""
-
-    def __init__(self, path):
-        self.name = os.path.basename(path)
-        with open(path, "rb") as f:
-            self._data = f.read()
-        self.size = len(self._data)
-
-    def getvalue(self):
-        return self._data
-
-
-if not uploaded_file:
-    st.markdown(
-        "<div style='margin-top:0.75rem;font-size:0.9rem;color:#9cb4d8;'>"
-        "🎯 <strong>No file handy?</strong> Try one of these real-world examples:</div>",
-        unsafe_allow_html=True,
-    )
-    _s_cols = st.columns(len(SAMPLE_FILES))
-    for _col, _sample in zip(_s_cols, SAMPLE_FILES):
-        with _col:
-            if st.button(_sample["button"], use_container_width=True,
-                         key=f"sample_{_sample['key']}"):
-                st.session_state["active_sample"] = _sample["key"]
-                track_event("sample_file_used", {"sample": _sample["key"]})
-                st.rerun()
-            st.caption(_sample["caption"])
-
-# A chosen sample stands in for an upload until the user clears it
-if not uploaded_file and st.session_state.get("active_sample"):
-    _chosen = next((x for x in SAMPLE_FILES
-                    if x["key"] == st.session_state["active_sample"]), None)
-    if _chosen and os.path.exists(_chosen["path"]):
-        uploaded_file = _SampleFile(_chosen["path"])
-        st.info("📄 **Sample file loaded** — this is an example file, "
-                "not one of yours. Upload your own above any time.")
-    else:
-        st.session_state.pop("active_sample", None)
-
 if uploaded_file:
     # Clear stored preview if a different file is uploaded
     if st.session_state.get('preview_filename') and \
@@ -1908,9 +1840,7 @@ if uploaded_file:
 
     _ext = Path(uploaded_file.name).suffix.lower().lstrip('.')
     track_event('file_uploaded',
-                {'file_ext': _ext,
-                 'size_bucket': _size_bucket(uploaded_file.size),
-                 'is_sample': bool(st.session_state.get('active_sample'))},
+                {'file_ext': _ext, 'size_bucket': _size_bucket(uploaded_file.size)},
                 once_key=f'upload_{uploaded_file.name}_{uploaded_file.size}')
 
     col_succ, col_clear = st.columns([4, 1])
@@ -1919,7 +1849,6 @@ if uploaded_file:
     with col_clear:
         if st.button("🔄 New File", use_container_width=True, help="Clear this file and upload a new one"):
             st.session_state['file_uploader_key'] = st.session_state.get('file_uploader_key', 0) + 1
-            st.session_state.pop('active_sample', None)
             st.session_state.pop('artbot_file_context', None)
             st.session_state.pop('preview_result', None)
             st.session_state.pop('preview_color_data', None)
