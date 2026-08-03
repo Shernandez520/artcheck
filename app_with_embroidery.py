@@ -28,18 +28,10 @@ from PIL import Image, ImageDraw
 from pathlib import Path
 import tempfile
 
-def inject_ga():
-    GA_ID = "G-E1711T2D9R"
-    import streamlit.components.v1 as _ga_components
-    _ga_components.html(f"""
-        <script async src="https://www.googletagmanager.com/gtag/js?id={GA_ID}"></script>
-        <script>
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){{dataLayer.push(arguments);}}
-            gtag('js', new Date());
-            gtag('config', '{GA_ID}');
-        </script>
-    """, height=0, scrolling=False)
+# NOTE: GA4 is injected into Streamlit's real index.html <head> by inject_ga.py
+# at container startup (see start.sh). Do NOT add gtag via components.html() —
+# that renders inside a zero-height iframe, so hits are attributed to the
+# iframe's blank document instead of artcheck.app, corrupting analytics.
 
 st.set_page_config(
     page_title="ArtCheck - Preview Generator",
@@ -200,8 +192,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-inject_ga()
 
 # ============================================================================
 # ARTBOT INTEGRATION
