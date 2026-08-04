@@ -33,46 +33,6 @@ import tempfile
 # that renders inside a zero-height iframe, so hits are attributed to the
 # iframe's blank document instead of artcheck.app, corrupting analytics.
 
-
-# ============================================================================
-# ANALYTICS EVENTS
-# Streamlit components render inside iframes, so gtag (which lives in the real
-# page head, injected by inject_ga.py) is not directly reachable. We postMessage
-# up to the parent, where a listener forwards the event to GA4.
-# PRIVACY: never send filenames or file contents — extension and size only.
-# ============================================================================
-def track_event(name, params=None, once_key=None):
-    """Send a GA4 event. If once_key is given, fire only once per session for
-    that key (Streamlit reruns the whole script on every interaction)."""
-    try:
-        if once_key:
-            fired = st.session_state.setdefault('_ga_fired', set())
-            if once_key in fired:
-                return
-            fired.add(once_key)
-        import json as _json
-        import streamlit.components.v1 as _c
-        payload = _json.dumps({'type': 'artcheck_event', 'name': name,
-                               'params': params or {}})
-        _c.html(
-            f"<script>try{{window.parent.postMessage({payload},'*');}}catch(e){{}}</script>",
-            height=0, scrolling=False)
-    except Exception:
-        pass
-
-
-def _size_bucket(size_bytes):
-    """Bucket file size so we learn scale without storing anything identifying."""
-    kb = (size_bytes or 0) / 1024
-    if kb < 100:
-        return "under_100kb"
-    if kb < 1024:
-        return "100kb_1mb"
-    if kb < 10240:
-        return "1mb_10mb"
-    return "over_10mb"
-
-
 st.set_page_config(
     page_title="ArtCheck - Preview Generator",
     page_icon="🎨",
@@ -138,9 +98,6 @@ def _render_mockup_builder_button(art_bytes, filename_stem):
 
 
 if st.query_params.get("mockup"):
-    track_event('mockup_builder_opened',
-                {'preloaded': bool(st.query_params.get("token", ""))},
-                once_key='mockup_open')
     import streamlit.components.v1 as _mockup_components
     import base64 as _b64
     try:
@@ -1661,9 +1618,6 @@ with st.sidebar:
 
     # Handle pending question (from example buttons or send)
     def _run_artbot(question):
-        track_event('artbot_question',
-                    {'has_file': bool(st.session_state.get('artbot_file_context')),
-                     'turn': len(st.session_state.get('artbot_history', [])) // 2 + 1})
         st.session_state.artbot_history.append({"role": "user", "content": question})
         try:
             import anthropic
@@ -1838,11 +1792,6 @@ if uploaded_file:
         """)
         st.stop()
 
-    _ext = Path(uploaded_file.name).suffix.lower().lstrip('.')
-    track_event('file_uploaded',
-                {'file_ext': _ext, 'size_bucket': _size_bucket(uploaded_file.size)},
-                once_key=f'upload_{uploaded_file.name}_{uploaded_file.size}')
-
     col_succ, col_clear = st.columns([4, 1])
     with col_succ:
         st.success(f"✓ Uploaded: **{uploaded_file.name}** ({uploaded_file.size / 1024 / 1024:.2f} MB)")
@@ -1990,11 +1939,6 @@ if uploaded_file:
             'size_kb': round(uploaded_file.size / 1024, 2),
         }
 
-        track_event('raster_analyzed',
-                    {'verdict': str(analysis.get('verdict', 'unknown')),
-                     'dpi': str(analysis.get('dpi', 'unknown'))},
-                    once_key=f'raster_{uploaded_file.name}_{uploaded_file.size}')
-
         render_raster_results(analysis, uploaded_file.name)
 
         # Mockup builder button — uses the original PNG bytes
@@ -2033,9 +1977,6 @@ if uploaded_file:
 
     # Generate Preview
     if st.button("🚀 Generate Preview", use_container_width=True, type="primary"):
-        track_event('preview_generated',
-                    {'file_ext': Path(uploaded_file.name).suffix.lower().lstrip('.'),
-                     'background': bg_type})
         with st.spinner("Generating preview..."):
             with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp_file:
                 tmp_file.write(uploaded_file.getvalue())
@@ -2246,14 +2187,13 @@ Despite the file extension, this is not a true vector file. It's a raster image 
                 st.markdown(swatch_html, unsafe_allow_html=True)
         st.markdown("---")
         _dl_data = st.session_state.get('preview_download_bytes') or img_bytes
-        if st.download_button(
+        st.download_button(
             label="⬇️ Download PNG (transparent background)",
             data=_dl_data,
             file_name=f"{st.session_state.get('preview_filename', 'preview').rsplit('.', 1)[0]}_preview.png",
             mime="image/png",
             use_container_width=True
-        ):
-            track_event('preview_downloaded')
+        )
         _filename_stem = st.session_state.get('preview_filename', 'artwork').rsplit('.', 1)[0]
         _render_mockup_builder_button(_dl_data, _filename_stem)
         if st.button("🔄 Upload New File", use_container_width=True):

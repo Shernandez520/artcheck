@@ -40,18 +40,6 @@ HEAD_SNIPPET = f"""
       gtag('js', new Date());
       gtag('config', '{GA_ID}');
     </script>
-    <!-- ArtCheck event bridge: Streamlit components render in iframes and cannot
-         reach gtag directly, so they postMessage up to the parent page. -->
-    <script>
-      window.addEventListener('message', function(e) {{
-        try {{
-          var d = e.data;
-          if (!d || d.type !== 'artcheck_event' || typeof d.name !== 'string') return;
-          if (typeof gtag !== 'function') return;
-          gtag('event', d.name, d.params || {{}});
-        }} catch (err) {{}}
-      }});
-    </script>
     <!-- HTTP health ping: belt-and-suspenders keepalive alongside Tornado WS pings -->
     <script>
       (function() {{
