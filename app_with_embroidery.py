@@ -637,12 +637,15 @@ class PreviewGenerator:
             elif bg_type == 'light':
                 bg_color = (255, 255, 255, 255)
             elif bg_type == 'auto':
-                # Check if artwork is mostly light — if so, use dark bg
-                grayscale = img.convert('L')
-                # Same mean brightness as before, computed in C instead of a
-                # Python loop over every pixel (seconds faster on large pages)
+                # Check if artwork is mostly light — if so, use dark bg.
+                # Measure only the artwork itself: transparent pixels are stored
+                # as black, so counting them made a white logo on an empty page
+                # look "dark" and land on a white background (white-on-white).
                 from PIL import ImageStat
-                avg = ImageStat.Stat(grayscale).mean[0]
+                grayscale = img.convert('L')
+                art_mask = img.split()[3].point(lambda a: 255 if a >= 128 else 0)
+                stat = ImageStat.Stat(grayscale, mask=art_mask)
+                avg = stat.mean[0] if stat.count[0] else 0
                 bg_color = (30, 30, 30, 255) if avg > 200 else (255, 255, 255, 255)
             else:
                 bg_color = (255, 255, 255, 255)
