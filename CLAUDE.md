@@ -67,6 +67,24 @@ shown by `render_font_check()` above Color Analysis; also passed to ArtBot.
 - SVG: any `<text>` element; names from `font-family`.
 Returns None (section hidden) if the file can't be inspected. Page 1 only.
 
+### Decoration Method Check — `decoration_rules.py`
+User picks a decoration method (+ imprint location and print width) and gets a
+pass / needs-attention / not-suitable verdict with reasons, an "also confirm"
+list, and a customer script. Shown in the vector flow (above Font Check) and in
+all three raster flows via `render_decoration_check(facts, filename)`.
+- `decoration_rules.py` is pure Python (no Streamlit): `METHODS`, `LOCATIONS`,
+  `facts_from_vector()`, `facts_from_raster()`, `evaluate()`, `customer_script()`,
+  `artbot_summary()`. Change rules there, and update `tests/test_decoration_rules.py`.
+- Numbers (max imprint sizes, minimum quantities, 3/16" embroidery text, 1 mm DTFx
+  detail, 200/300 dpi) come from Dubow Textile's info sheets and imprint-location
+  chart. The UI credits Dubow and tells users to confirm with their own decorator.
+  Dubow publishes no screen-print color maximum and no stitch/thread limits, so
+  those are shown as information, never as a fail.
+- Print area = smaller of method max and location max. Raster dpi is checked at
+  the chosen print width (`MIN_DPI` 200, `GOOD_DPI` 300).
+- `RasterAnalyzer.analyze()` adds `has_transparency` / `soft_transparency` for the
+  no-background and fade warnings. The verdict is also passed to ArtBot.
+
 ### ArtBot (sidebar chat)
 Senior production artist persona; sees uploaded file context (colors, dims,
 warnings) injected into the system prompt. `st.form` for Enter-to-send, key
@@ -115,7 +133,8 @@ after every deploy — upload is the core feature.
 `.github/workflows/tests.yml` builds the production Docker image, starts the app
 with a 1 GB memory limit, and runs `tests/e2e_test.py` (Playwright) against it:
 PDF, EPS, SVG, DST, PNG, raster-in-PDF, .indd, file switching, Mockup Builder
-handoff, render cap, Auto background, sizes, multi-page notice, Font Check. It also fails if temp files are left in
+handoff, render cap, Auto background, sizes, multi-page notice, Font Check,
+Decoration Method Check. `tests/test_decoration_rules.py` unit-tests the rules. It also fails if temp files are left in
 `/tmp` or the container is OOM-killed. Sample files come from
 `tests/make_fixtures.py` — no real artwork in the repo. GA requests are blocked.
 - Work on a branch and open a PR; merge only when the check is green.
