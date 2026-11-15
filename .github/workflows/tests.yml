@@ -1,0 +1,85 @@
+name: Tests
+
+# Runs the browser test on every pull request, before anything reaches main
+# (and therefore before anything reaches production). Can also be started by
+# hand from the Actions tab.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-test:
+    name: Browser test (production Docker image)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the same Docker image Railway builds
+        run: docker build -t artcheck-test .
+
+      - name: Start ArtCheck
+        # Same startup as start.sh, minus the two browser.server* flags that
+        # point the page at www.artcheck.app. Memory is limited to 1 GB so a
+        # change that makes previews use far more memory fails here first.
+        run: |
+          docker run -d --name artcheck --memory=1g -p 8501:8501 artcheck-test \
+            bash -c "python /app/inject_ga.py && exec streamlit run app_with_embroidery.py \
+              --server.port=8501 --server.address=0.0.0.0 --server.headless=true \
+              --server.maxUploadSize=50 --server.enableCORS=false \
+              --server.enableXsrfProtection=false --server.enableWebsocketCompression=false \
+              --server.fileWatcherType=none --browser.gatherUsageStats=false"
+          for i in $(seq 1 60); do
+            if curl -fs http://localhost:8501/_stcore/health >/dev/null; then echo "App is up"; exit 0; fi
+            sleep 2
+          done
+          echo "App did not start"; docker logs artcheck; exit 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test tools
+        run: |
+          pip install -r tests/requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Create sample art files
+        run: python tests/make_fixtures.py "$RUNNER_TEMP/fixtures"
+
+      - name: Run the browser test
+        run: python tests/e2e_test.py --url http://localhost:8501 --fixtures "$RUNNER_TEMP/fixtures"
+
+      - name: Check the server afterwards
+        if: always()
+        run: |
+          running=$(docker inspect -f '{{.State.Running}}' artcheck)
+          oom=$(docker inspect -f '{{.State.OOMKilled}}' artcheck)
+          echo "running=$running oom_killed=$oom"
+          if [ "$oom" = "true" ]; then echo "::error::ArtCheck ran out of memory (1 GB limit) during the test"; exit 1; fi
+          if [ "$running" != "true" ]; then echo "::error::ArtCheck stopped during the test"; exit 1; fi
+          leftover=$(docker exec artcheck sh -c 'ls /tmp/tmp* 2>/dev/null | wc -l')
+          echo "temp files left on the server: $leftover"
+          if [ "$leftover" != "0" ]; then
+            docker exec artcheck sh -c 'ls -la /tmp'
+            echo "::error::$leftover temporary file(s) were left behind in /tmp"; exit 1
+          fi
+
+      - name: Show server log if something failed
+        if: failure()
+        run: docker logs --tail 200 artcheck
+
+      - name: Keep screenshots of failed checks
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-check-screenshots
+          path: test-screenshots/
+          if-no-files-found: ignore

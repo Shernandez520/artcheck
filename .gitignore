@@ -31,3 +31,7 @@ Old versions/
 Legal CYA/
 FEEDBACK_LOG.md
 CLAUDE.local.md
+
+# Browser test output
+test-screenshots/
+tests/fixtures/
