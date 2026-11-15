@@ -14,7 +14,7 @@ reach the art department.
 
 ## Tech Stack
 - **Python** + **Streamlit 1.43.2** (pinned — do NOT unpin, 1.55 broke the app)
-- **PyMuPDF (fitz)** — PDF/AI renderer (dynamic scale to 1200px min, alpha=True for bg support)
+- **PyMuPDF (fitz)** — PDF/AI renderer (dynamic scale: 10x, 1200px min, capped at 4000px longest side via `RENDER_MAX_PX` — uncapped renders of large pages exhaust memory; alpha=True for bg support)
 - **Ghostscript** — EPS renderer (pngalpha device) + EPS color extraction (GS→PDF→fitz pipeline)
 - **CairoSVG** — SVG renderer; **pdf2image** — PDF fallback
 - **pyembroidery** — embroidery files; **Pillow** — compositing
