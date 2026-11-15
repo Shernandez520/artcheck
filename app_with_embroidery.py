@@ -28,6 +28,8 @@ from PIL import Image, ImageDraw
 from pathlib import Path
 import tempfile
 
+import decoration_rules  # pure-Python rules for the Decoration Method Check
+
 # NOTE: GA4 is injected into Streamlit's real index.html <head> by inject_ga.py
 # at container startup (see start.sh). Do NOT add gtag via components.html() —
 # that renders inside a zero-height iframe, so hits are attributed to the
@@ -938,6 +940,28 @@ class RasterAnalyzer:
             elif img.mode == 'P':
                 results['warnings'].append("⚠️ This file uses a limited color palette, which may affect print quality.")
 
+            # Transparency facts, used by the Decoration Method Check
+            try:
+                alpha = None
+                if img.mode in ('RGBA', 'LA'):
+                    alpha = img.getchannel('A')
+                elif img.mode == 'P' and 'transparency' in img.info:
+                    alpha = img.convert('RGBA').getchannel('A')
+                if alpha is None:
+                    results['has_transparency'] = False
+                    results['soft_transparency'] = False
+                else:
+                    hist = alpha.histogram()
+                    total = sum(hist)
+                    visible = total - hist[0]
+                    # Any pixel that is not fully opaque
+                    results['has_transparency'] = hist[255] < total
+                    # Clearly see-through pixels (not just soft anti-aliased edges):
+                    # more than 8% of the visible artwork is 10-90% opaque
+                    results['soft_transparency'] = bool(visible) and (sum(hist[26:230]) / visible) > 0.08
+            except Exception:
+                pass
+
             # Recommendations
             if results['verdict'] in ('poor', 'marginal'):
                 results['recommendations'].append("Ask the customer for the original vector file (.ai, .eps, .pdf) from their designer — this is always the best option.")
@@ -1303,7 +1327,7 @@ class ColorExtractor:
 
             # Generate warnings
             if gradients:
-                results['warnings'].append("⚠️ Gradient detected — not compatible with screen print or embroidery")
+                results['warnings'].append("⚠️ Gradient detected — prints as halftone dots in screen print and can't be embroidered as a smooth blend")
             
             hairlines = [s for s in results['strokes'] if s.get('width', 1) < 0.5]
             if hairlines:
@@ -1704,6 +1728,83 @@ If the art department doesn't have the exact same fonts installed, the text can 
     """)
 
 
+def render_decoration_check(facts, file_label=""):
+    """Decoration Method Check: pick a method (and location) and screen the file for it."""
+    try:
+        _render_decoration_check(facts, file_label)
+    except Exception as err:
+        st.caption(f"Decoration Method Check is unavailable for this file ({err}).")
+
+
+def _render_decoration_check(facts, file_label):
+    dr = decoration_rules
+    st.markdown("---")
+    st.markdown("### 🎯 Decoration Method Check")
+    st.caption("Choose how this art will be decorated to see whether the file is a good fit.")
+
+    ctx = st.session_state.get('artbot_file_context')
+    col_method, col_location, col_width = st.columns([3, 3, 2])
+    with col_method:
+        method = st.selectbox(
+            "Decoration method", [""] + dr.method_keys(),
+            format_func=lambda k: dr.method_label(k) if k else "— Select a method —",
+            key="prescreen_method",
+        )
+    if not method:
+        if isinstance(ctx, dict):
+            ctx.pop('prescreen', None)
+        return
+
+    location = ""
+    if dr.location_keys(method):
+        with col_location:
+            location = st.selectbox(
+                "Imprint location", [""] + dr.location_keys(method),
+                format_func=lambda k: dr.location_label(k) if k else "— Not specified —",
+                key="prescreen_location",
+            )
+    location = location or None
+
+    print_width = None
+    if dr.asks_for_print_width(facts, method, location):
+        max_w = float(dr.max_print_width(facts, method, location))
+        with col_width:
+            print_width = st.number_input(
+                "Print width (in)", min_value=min(0.25, max_w), max_value=max_w, value=max_w, step=0.25,
+                key=f"prescreen_width_{method}_{location}_{file_label}",
+                help="Starts at the largest size that fits. Lower it to the size you actually plan to print.",
+            )
+
+    ev = dr.evaluate(facts, method, location, print_width)
+    label = dr.method_label(method)
+    banner = {
+        'pass': ('#1a6b3a', f'✅ No problems found for {label}'),
+        'warn': ('#7d5a00', f'⚠️ Needs attention for {label}'),
+        'fail': ('#8b1a1a', f'❌ Not suitable as-is for {label}'),
+    }[ev['verdict']]
+    st.markdown(
+        f'<div style="padding:12px;border-radius:8px;background:{banner[0]};color:#fff;font-size:1rem;'
+        f'font-weight:bold;margin-bottom:12px;">{banner[1]}</div>', unsafe_allow_html=True)
+
+    if ev['fails']:
+        st.markdown("**Problems:**\n" + "\n".join(f"- ❌ {t}" for t in ev['fails']))
+    if ev['warns']:
+        st.markdown("**Warnings:**\n" + "\n".join(f"- ⚠️ {t}" for t in ev['warns']))
+    if ev['notes']:
+        st.markdown("**Good to know:**\n" + "\n".join(f"- {t}" for t in ev['notes']))
+    if ev['confirm']:
+        st.markdown("**Also confirm (ArtCheck can't see this from the file):**\n" + "\n".join(f"- {t}" for t in ev['confirm']))
+
+    script = dr.customer_script(ev)
+    if script:
+        st.warning("**What to tell your customer:**\n\n> \"" + script.replace("\n", "\n> ").replace("> > ", "> ") + "\"")
+
+    st.caption(f"📋 {dr.DISCLAIMER} Guidelines courtesy of [{dr.GUIDE_NAME}]({dr.GUIDE_URL}).")
+
+    if isinstance(ctx, dict):
+        ctx['prescreen'] = dr.artbot_summary(ev)
+
+
 def render_color_results(color_data, file_ext):
     """Render color extraction results in Streamlit"""
     if not color_data:
@@ -1836,6 +1937,10 @@ def build_artbot_system_prompt():
             lines.append(f"Font check: LIVE TEXT FOUND — fonts are NOT outlined. Fonts used: {font_names}")
         else:
             lines.append("Font check: no live text found (fonts are outlined or the file has no text)")
+
+    # Decoration method the user is screening for, if they picked one
+    if ctx.get('prescreen'):
+        lines.append(ctx['prescreen'])
 
     # Embroidery
     emb = ctx.get('embroidery_info')
@@ -2168,6 +2273,7 @@ if uploaded_file:
                     'size_kb': round(uploaded_file.size / 1024, 2),
                 }
                 render_raster_results(_analysis, uploaded_file.name)
+                render_decoration_check(decoration_rules.facts_from_raster(_analysis, uploaded_file.name), uploaded_file.name)
                 # Mockup builder uses the extracted raster bytes
                 st.markdown("---")
                 _filename_stem = uploaded_file.name.rsplit('.', 1)[0]
@@ -2217,6 +2323,7 @@ if uploaded_file:
         }
 
         render_raster_results(analysis, uploaded_file.name)
+        render_decoration_check(decoration_rules.facts_from_raster(analysis, uploaded_file.name), uploaded_file.name)
 
         # Mockup builder button — uses the original PNG bytes
         if uploaded_file.name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.tiff', '.tif', '.bmp', '.webp')):
@@ -2352,6 +2459,9 @@ if uploaded_file:
 if not uploaded_file and st.session_state.get('_raster_display_bytes') and st.session_state.get('_raster_analysis'):
     st.image(st.session_state['_raster_display_bytes'], caption="Your Image", use_container_width=True)
     render_raster_results(st.session_state['_raster_analysis'], st.session_state.get('_raster_filename', ''))
+    render_decoration_check(
+        decoration_rules.facts_from_raster(st.session_state['_raster_analysis'], st.session_state.get('_raster_filename', '')),
+        st.session_state.get('_raster_filename', ''))
     _rfn = st.session_state.get('_raster_filename', 'artwork')
     if _rfn.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.tiff', '.tif', '.bmp', '.webp')):
         st.markdown("---")
@@ -2528,6 +2638,8 @@ Despite the file extension, this is not a true vector file. It's a raster image 
                     del st.session_state[_k]
             st.session_state['file_uploader_key'] = st.session_state.get('file_uploader_key', 0) + 1
             st.rerun()
+    render_decoration_check(decoration_rules.facts_from_vector(result, color_data),
+                            st.session_state.get('preview_filename', ''))
     render_font_check(result.get('font_check'))
     if color_data:
         stored_filename = st.session_state.get('preview_filename', '')

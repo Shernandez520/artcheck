@@ -51,6 +51,9 @@ jobs:
           pip install -r tests/requirements.txt
           python -m playwright install --with-deps chromium
 
+      - name: Check the decoration rules
+        run: python tests/test_decoration_rules.py
+
       - name: Create sample art files
         run: python tests/make_fixtures.py "$RUNNER_TEMP/fixtures"
 

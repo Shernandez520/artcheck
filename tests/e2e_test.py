@@ -265,6 +265,86 @@ def check_white_logo_auto_background(app):
     app.no_errors()
 
 
+def pick(page, label, option):
+    """Choose an option in a Streamlit dropdown by its label."""
+    box = page.locator('[data-testid="stSelectbox"]').filter(has_text=label).first
+    box.scroll_into_view_if_needed()
+    box.locator('[data-baseweb="select"]').click()
+    # Long lists only render the options in view, so type to filter first
+    page.keyboard.type(option.split(" (")[0])
+    page.get_by_role("option", name=option, exact=True).click()
+    page.wait_for_timeout(1500)
+
+
+def decoration_text(page):
+    """Everything shown from the Decoration Method Check heading down."""
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    expect("Decoration Method Check" in body, "Decoration Method Check section is missing")
+    return body.split("Decoration Method Check", 1)[1]
+
+
+def check_decoration_screen_print(app):
+    page = app.fresh()
+    app.upload_vector("logo_red_3x2in.pdf")
+    app.generate()
+    text = decoration_text(page)
+    expect("Needs attention" not in text and "No problems found" not in text, "a verdict is shown before a method is picked")
+    pick(page, "Decoration method", "Screen Print")
+    text = decoration_text(page)
+    expect("Needs attention for Screen Print" in text, "CMYK art without Pantone colors should need attention for screen print")
+    expect("No Pantone" in text, "missing-Pantone warning is not shown")
+    expect("Minimum order: 24 pieces" in text, "24-piece minimum is not shown")
+    expect("Dubow Textile" in text, "Dubow Textile is not credited")
+    expect("confirm with your specific decorator" in text, "the check-with-your-decorator advice is missing")
+    app.no_errors()
+
+
+def check_decoration_dtg_resolution(app):
+    page = app.fresh()
+    app.upload("photo_900x600.png")
+    page.get_by_text("Usable Print Sizes").wait_for(timeout=30_000)
+    page.wait_for_timeout(1500)
+    pick(page, "Decoration method", "Digital Print (DTG)")
+    pick(page, "Imprint location", 'Left / Right Chest (max 5" × 5")')
+    text = decoration_text(page)
+    expect("Not suitable as-is for Digital Print (DTG)" in text, "900 px image at 5\" wide should fail for DTG")
+    expect("Only 180 dpi" in text, "the 180 dpi figure is not shown")
+    expect("What to tell your customer" in text, "customer script is missing")
+    width = page.get_by_label("Print width (in)")
+    width.fill("3")
+    width.press("Enter")
+    page.wait_for_timeout(2000)
+    text = decoration_text(page)
+    expect("300 dpi" in text and "Only 180 dpi" not in text, "lowering the print width to 3\" should give 300 dpi")
+    expect("No transparent background" in text, "image without transparency should be flagged for DTG")
+    app.no_errors()
+
+
+def check_decoration_embroidery_stitch_file(app):
+    page = app.fresh()
+    app.upload_vector("stitch.dst")
+    app.generate()
+    pick(page, "Decoration method", "Embroidery")
+    pick(page, "Imprint location", 'Hat Front (max 5" × 2.25")')
+    text = decoration_text(page)
+    expect("No problems found for Embroidery" in text, "small stitch file should pass for a hat front")
+    app.no_errors()
+
+
+def check_decoration_dtfx_fades(app):
+    page = app.fresh()
+    app.upload("fade_1500px.png")
+    page.get_by_text("Usable Print Sizes").wait_for(timeout=30_000)
+    page.wait_for_timeout(1500)
+    pick(page, "Decoration method", "DTFx (Direct to Film Transfer)")
+    pick(page, "Imprint location", 'Left / Right Chest (max 5" × 5")')
+    text = decoration_text(page)
+    expect("Needs attention for DTFx" in text, "art that fades to transparent should need attention for DTFx")
+    expect("fades or see-through areas" in text, "the fade warning is not shown")
+    expect("300 dpi" in text, "1500 px at 5\" should report 300 dpi")
+    app.no_errors()
+
+
 def check_indesign_message(app):
     page = app.fresh()
     app.upload("layout.indd")
@@ -283,6 +363,10 @@ CHECKS = [
     ("Font Check flags live text in a PDF, with embedded / not embedded", check_fonts_pdf),
     ("Font Check flags live text in an SVG", check_fonts_svg),
     ("Font Check flags live text in an EPS (Ghostscript)", check_fonts_eps),
+    ("Decoration check: screen print warnings, minimum, Dubow credit, decorator advice", check_decoration_screen_print),
+    ("Decoration check: DTG resolution at the chosen location and print width", check_decoration_dtg_resolution),
+    ("Decoration check: stitch file passes for a hat front", check_decoration_embroidery_stitch_file),
+    ("Decoration check: DTFx flags art that fades to transparent", check_decoration_dtfx_fades),
     ("Embroidery file: stitch count and real size", check_embroidery),
     ("Raster image: quality verdict", check_raster_png),
     ("Raster-in-PDF is detected", check_raster_in_pdf),

@@ -125,6 +125,12 @@ def main(out_dir):
     ImageDraw.Draw(photo).ellipse([100, 100, 800, 500], fill=(200, 0, 200))
     photo.save(out / "photo_900x600.png", dpi=(72, 72))
 
+    # Large logo that fades out to transparent (not allowed for DTFx / stickers)
+    fade = Image.new("RGBA", (1500, 1500), (0, 0, 0, 0))
+    for y in range(1500):
+        ImageDraw.Draw(fade).line([(200, y), (1300, y)], fill=(0, 90, 200, int(255 * y / 1499)))
+    fade.save(out / "fade_1500px.png", dpi=(300, 300))
+
     # A PDF that is only a picture (the "raster saved as vector" case)
     c = canvas.Canvas(str(out / "raster_in.pdf"), pagesize=(300, 200))
     c.drawImage(str(out / "photo_900x600.png"), 0, 0, 300, 200)
