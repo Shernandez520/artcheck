@@ -507,7 +507,7 @@ class EmbroideryConverter:
 class PreviewGenerator:
     """Handles conversion of vector files to PNG previews - CLOUD OPTIMIZED"""
     
-    SUPPORTED_FORMATS = ['.ai', '.eps', '.pdf', '.svg', '.cdr', '.xcf']
+    SUPPORTED_FORMATS = ['.ai', '.eps', '.pdf', '.svg', '.cdr']
     DEFAULT_DPI = 300
     PREVIEW_MAX_WIDTH = 1200
     PREVIEW_MAX_HEIGHT = 1200
@@ -2238,7 +2238,8 @@ def build_artbot_system_prompt():
     return ARTBOT_SYSTEM_PROMPT + "\n".join(lines)
 
 
-with st.sidebar:
+def _artbot_sidebar_body():
+    """Everything inside the ArtBot sidebar. Called by render_artbot_sidebar()."""
     st.markdown("### 🤖 Ask ArtBot")
     st.caption("Your AI production assistant - 20+ years of industry knowledge")
     file_ctx = st.session_state.get('artbot_file_context')
@@ -2372,6 +2373,26 @@ with st.sidebar:
 </div>
 """, unsafe_allow_html=True)
 
+
+_SIDEBAR_RENDERED = {'done': False}   # reset on every script run
+
+
+def render_artbot_sidebar():
+    """Draw the ArtBot sidebar. Call this AFTER the main area has rendered.
+
+    ArtBot calls st.rerun() (send, example buttons, pending answer, clear). A
+    rerun throws away the state of every widget that has not been rendered yet
+    in that run. When the sidebar ran first, each ArtBot question made the file
+    uploader forget its file (so its X stopped clearing results) and reset the
+    Decoration Method Check. Rendering the sidebar last keeps all of that.
+    It must be called before every early stop and once at the end of the script.
+    """
+    if _SIDEBAR_RENDERED['done']:
+        return
+    _SIDEBAR_RENDERED['done'] = True
+    with st.sidebar:
+        _artbot_sidebar_body()
+
 # ============================================================================
 # FILE UPLOAD SECTION
 # ============================================================================
@@ -2402,12 +2423,6 @@ st.markdown("""
 
 st.markdown("## 📁 Upload Your File")
 
-vector_formats = ".ai, .eps, .pdf, .svg, .cdr, .xcf"
-embroidery_formats = ".dst, .pes, .exp, .jef, .vp3, .xxx, .u01"
-
-raster_formats = ".png, .jpg, .gif, .tiff, .bmp, .webp"
-st.info(f"**Supported:** Vector files ({vector_formats}) | Embroidery files ({embroidery_formats}) | Raster images ({raster_formats})")
-
 def _clear_file_state():
     """Forget everything about the current file: preview, analysis, ArtBot's
     file context, Mockup Builder handoff and raster-in-PDF caches."""
@@ -2437,7 +2452,8 @@ uploaded_file = st.file_uploader(
     key=_uploader_key,
     type=['ai', 'eps', 'pdf', 'svg', 'cdr', 'xcf', 'indd', 'dst', 'pes', 'exp', 'jef', 'vp3', 'xxx', 'u01',
           'png', 'jpg', 'jpeg', 'gif', 'tiff', 'tif', 'bmp', 'webp'],
-    help="Supports vector, embroidery, and raster image files up to 50MB",
+    help="Vector: .ai .eps .pdf .svg .cdr  •  Embroidery: .dst .pes .exp .jef .vp3 .xxx .u01  •  "
+         "Images: .png .jpg .gif .tiff .bmp .webp  •  Up to 50MB",
     on_change=_on_uploader_change,
     args=(_uploader_key,),
 )
@@ -2478,6 +2494,22 @@ if uploaded_file:
     
         Then upload the exported file to ArtCheck!
         """)
+        render_artbot_sidebar()
+        st.stop()
+
+    # GIMP's own format: accepted by the uploader only so we can explain what to do
+    if uploaded_file.name.lower().endswith('.xcf'):
+        st.error("### 🖼️ GIMP Files Not Supported")
+        st.warning("""
+        **GIMP (.xcf) files cannot be processed directly.**
+
+        **Please export from GIMP as:**
+        - **PNG** (File → Export As → name it .png) - keeps the transparent background
+        - **PDF** (File → Export As → name it .pdf)
+
+        Then upload the exported file to ArtCheck!
+        """)
+        render_artbot_sidebar()
         st.stop()
 
     col_succ, col_clear = st.columns([4, 1])
@@ -2575,6 +2607,7 @@ if uploaded_file:
                 st.markdown("---")
                 _filename_stem = uploaded_file.name.rsplit('.', 1)[0]
                 _render_mockup_builder_button(_img_bytes, _filename_stem)
+                render_artbot_sidebar()
                 st.stop()
             else:
                 _doc.close()
@@ -2634,6 +2667,7 @@ if uploaded_file:
         if not st.session_state.get('_raster_context_synced'):
             st.session_state['_raster_context_synced'] = True
             st.rerun()
+        render_artbot_sidebar()
         st.stop()
 
     # Background options — use session state so selection survives the Generate button click
@@ -2951,3 +2985,6 @@ st.markdown("""
     <p style="font-size:0.75rem;color:#555;margin-top:4px;">ArtCheck is free — support keeps it that way.</p>
 </div>
 """, unsafe_allow_html=True)
+
+# ArtBot sidebar is drawn last on purpose — see render_artbot_sidebar()
+render_artbot_sidebar()
