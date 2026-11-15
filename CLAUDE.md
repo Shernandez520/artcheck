@@ -101,6 +101,20 @@ git add <files> && git commit -m "..." && git push   # deploys immediately
 Monitor deploys in the Railway dashboard. Test file uploads (EPS + PDF + PNG)
 after every deploy — upload is the core feature.
 
+### Automated browser test (runs on every pull request)
+`.github/workflows/tests.yml` builds the production Docker image, starts the app
+with a 1 GB memory limit, and runs `tests/e2e_test.py` (Playwright) against it:
+PDF, EPS, SVG, DST, PNG, raster-in-PDF, .indd, file switching, Mockup Builder
+handoff, render cap, Auto background. It also fails if temp files are left in
+`/tmp` or the container is OOM-killed. Sample files come from
+`tests/make_fixtures.py` — no real artwork in the repo. GA requests are blocked.
+- Work on a branch and open a PR; merge only when the check is green.
+- When a change intentionally alters something the test asserts (sizes, labels,
+  render cap), update `tests/e2e_test.py` in the same PR.
+- Run locally: `pip install -r tests/requirements.txt && playwright install chromium`,
+  start the app, then `python tests/e2e_test.py --url http://localhost:8501`
+  (`SKIP_EPS=1` without Ghostscript). Not covered: .cdr, .xcf, live ArtBot replies.
+
 ## Decoration Method Quick Reference
 | Method | File Needs | Key Limits |
 |--------|-----------|------------|
