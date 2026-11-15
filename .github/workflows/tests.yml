@@ -54,6 +54,9 @@ jobs:
       - name: Check the decoration rules
         run: python tests/test_decoration_rules.py
 
+      - name: Check the CorelDRAW helpers
+        run: python tests/test_cdr_tools.py
+
       - name: Create sample art files
         run: python tests/make_fixtures.py "$RUNNER_TEMP/fixtures"
 

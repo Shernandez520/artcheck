@@ -29,6 +29,44 @@ from pathlib import Path
 import tempfile
 
 import decoration_rules  # pure-Python rules for the Decoration Method Check
+import cdr_tools         # pure-Python helpers for CorelDRAW conversion
+
+# CorelDRAW conversions made during this script run, keyed by file path, so the
+# two preview renders and the PDF download share one conversion (it is slow).
+# Streamlit re-executes this file on every run, so this never outlives a run.
+_CDR_CONVERSIONS = {}
+
+
+def convert_cdr(input_file):
+    """CorelDRAW (.cdr) -> vector PDF, without rasterizing.
+
+    cdr2xhtml (libcdr) -> clean SVG of page 1 (cdr_tools) -> CairoSVG PDF surface.
+    Returns {'pdf': bytes, 'pages': page count in the .cdr, 'size_in': (w, h)} or None.
+    """
+    if input_file in _CDR_CONVERSIONS:
+        return _CDR_CONVERSIONS[input_file]
+    converted = None
+    try:
+        run = subprocess.run(["cdr2xhtml", input_file], capture_output=True, timeout=60)
+        if run.returncode == 0 and run.stdout:
+            pages = cdr_tools.svg_pages_from_libcdr(run.stdout.decode("utf-8", errors="ignore"))
+            if pages:
+                import cairosvg
+                import fitz
+                pdf_bytes = cairosvg.svg2pdf(bytestring=pages[0].encode("utf-8"))
+                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                rect = doc[0].rect
+                doc.close()
+                if pdf_bytes and rect.width > 0 and rect.height > 0:
+                    converted = {
+                        'pdf': pdf_bytes,
+                        'pages': len(pages),
+                        'size_in': (round(rect.width / 72, 2), round(rect.height / 72, 2)),
+                    }
+    except Exception:
+        converted = None
+    _CDR_CONVERSIONS[input_file] = converted
+    return converted
 
 # NOTE: GA4 is injected into Streamlit's real index.html <head> by inject_ga.py
 # at container startup (see start.sh). Do NOT add gtag via components.html() —
@@ -698,7 +736,26 @@ class PreviewGenerator:
             st.warning(f"Background application failed: {str(e)}")
 
     def _convert_cdr(self, input_file, output_file):
-        """Convert CorelDRAW .cdr to PNG via cdr2xhtml (SVG) -> CairoSVG pipeline"""
+        """Convert CorelDRAW .cdr to PNG.
+
+        Preferred: convert_cdr() makes a vector PDF of page 1, rendered here with
+        fitz (correct page size, transparency, render cap). If that fails, fall
+        back to the older cdr2xhtml -> CairoSVG / fitz attempt below.
+        """
+        converted = convert_cdr(input_file)
+        if converted:
+            pdf_tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as pdf_tmp:
+                    pdf_tmp.write(converted['pdf'])
+                    pdf_tmp_path = pdf_tmp.name
+                if self._convert_with_fitz(pdf_tmp_path, output_file):
+                    return True
+            except Exception:
+                pass
+            finally:
+                if pdf_tmp_path and os.path.exists(pdf_tmp_path):
+                    os.unlink(pdf_tmp_path)
         try:
             # cdr2xhtml outputs SVG to stdout
             result = subprocess.run(
@@ -839,7 +896,12 @@ class PreviewGenerator:
                     # would report 4" for every SVG
                     preview['size_note'] = 'scalable'
             elif ext == '.cdr':
-                preview['size_note'] = 'unknown'
+                converted = convert_cdr(input_file)
+                if converted:
+                    preview['width_in'], preview['height_in'] = converted['size_in']
+                    preview['page_count'] = converted['pages']
+                else:
+                    preview['size_note'] = 'unknown'
             return preview
 
         st.error("Could not convert file. For CorelDRAW (.cdr) files, please export as PDF or SVG from CorelDRAW and re-upload. For other formats, try exporting as PDF or SVG from your design application.")
@@ -1764,6 +1826,7 @@ class PdfConverter:
       EPS -> Ghostscript pdfwrite (keeps paths, CMYK values and spot colors)
       AI  -> the PDF copy Illustrator stores inside the file, re-saved with fitz
       SVG -> CairoSVG's PDF surface
+      CDR -> convert_cdr(): libcdr -> clean SVG -> CairoSVG's PDF surface (page 1, RGB)
     Every result is inspected afterwards, so the UI can say whether the PDF
     really is vector instead of assuming it.
 
@@ -1771,7 +1834,7 @@ class PdfConverter:
       {'ok', 'source', 'pages', 'paths', 'images', 'has_text', 'vector', 'error'}
     """
 
-    SOURCE_FORMATS = ('.eps', '.ai', '.svg')
+    SOURCE_FORMATS = ('.eps', '.ai', '.svg', '.cdr')
 
     def can_convert(self, filename):
         return Path(filename).suffix.lower() in self.SOURCE_FORMATS
@@ -1790,6 +1853,8 @@ class PdfConverter:
                 made = self._ai_to_pdf(input_file, out_pdf, info)
             elif ext == '.svg':
                 made = self._svg_to_pdf(input_file, out_pdf)
+            elif ext == '.cdr':
+                made = self._cdr_to_pdf(input_file, out_pdf, info)
             else:
                 made = False
             if not made or not os.path.exists(out_pdf) or os.path.getsize(out_pdf) == 0:
@@ -1838,6 +1903,15 @@ class PdfConverter:
             return True
         finally:
             doc.close()
+
+    def _cdr_to_pdf(self, input_file, out_pdf, info):
+        converted = convert_cdr(input_file)
+        if not converted:
+            info['error'] = ("This CorelDRAW file could not be converted. Ask for a PDF exported from CorelDRAW instead.")
+            return False
+        with open(out_pdf, 'wb') as f:
+            f.write(converted['pdf'])
+        return True
 
     def _svg_to_pdf(self, input_file, out_pdf):
         import cairosvg
@@ -1890,6 +1964,9 @@ def render_pdf_export(pdf_bytes, info, filename_stem, live_text=False):
         notes.append("This file has live text. Where a font isn't inside the file, the PDF shows a substitute typeface — compare it with the original before sending.")
     if info.get('source') == '.svg':
         notes.append("SVG colors are RGB, so this PDF is RGB too.")
+    elif info.get('source') == '.cdr':
+        notes.append("Converted from CorelDRAW: colors come out as RGB (Pantone and CMYK values are not carried over) "
+                     "and gradients become fine solid bands. For production, ask for a PDF exported from CorelDRAW itself.")
     elif info.get('source') in ('.eps', '.ai'):
         notes.append("CMYK values and Pantone spot colors are carried over from the original.")
     for note in notes:
@@ -2629,6 +2706,7 @@ if uploaded_file:
 
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
+            _CDR_CONVERSIONS.clear()
 
             # Read image bytes BEFORE anything else
             _image_bytes = None
