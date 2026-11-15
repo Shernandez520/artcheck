@@ -115,6 +115,9 @@ def check_vector_pdf(app):
     m = metrics(page)
     expect(m.get("Size (inches)") == '3.0" x 2.0"', f"expected 3.0\" x 2.0\", page shows {m.get('Size (inches)')}")
     expect("Vector" in m.get("File Type", ""), f"File Type shows {m.get('File Type')}")
+    uploaded_kb = round(os.path.getsize(os.path.join(app.fixtures, "logo_red_3x2in.pdf")) / 1024, 2)
+    expect(m.get("File Size") == f"{uploaded_kb} KB", f"File Size shows {m.get('File Size')}, the uploaded file is {uploaded_kb} KB")
+    expect(page.get_by_text("ArtCheck previews and analyzes").count() == 0, "single-page PDF shows the multi-page notice")
     expect(page.get_by_text("Color Analysis").count() > 0, "Color Analysis section is missing")
     expect(page.get_by_text("Document Color Mode: CMYK").count() > 0, "CMYK document was not reported as CMYK")
     expect(page.get_by_role("button", name="Download PNG").count() > 0, "Download PNG button is missing")
@@ -138,7 +141,28 @@ def check_svg(app):
     page = app.fresh()
     app.upload_vector("logo.svg")
     app.generate()
-    expect(metrics(page).get("Dimensions (px)") == "1200 × 800", f"dimensions show {metrics(page).get('Dimensions (px)')}")
+    m = metrics(page)
+    expect(m.get("Dimensions (px)") == "1200 × 800", f"dimensions show {m.get('Dimensions (px)')}")
+    # This SVG has no real-world units, so there is no print size to report
+    expect(m.get("Size (inches)") == "Scalable", f"Size (inches) shows {m.get('Size (inches)')}")
+    app.no_errors()
+
+
+def check_svg_with_units(app):
+    page = app.fresh()
+    app.upload_vector("logo_3x2in.svg")
+    app.generate()
+    m = metrics(page)
+    expect(m.get("Size (inches)") == '3.0" x 2.0"', f"expected 3.0\" x 2.0\", page shows {m.get('Size (inches)')}")
+    app.no_errors()
+
+
+def check_multi_page_pdf(app):
+    page = app.fresh()
+    app.upload_vector("two_pages.pdf")
+    app.generate()
+    expect(page.get_by_text("This file has 2 pages").count() > 0, "no notice that the PDF has 2 pages")
+    expect(metrics(page).get("Size (inches)") == '3.0" x 2.0"', f"Size (inches) shows {metrics(page).get('Size (inches)')}")
     app.no_errors()
 
 
@@ -210,7 +234,9 @@ CHECKS = [
     ("App loads with uploader and ArtBot sidebar", check_home),
     ("Vector PDF: preview, real size in inches, CMYK color analysis", check_vector_pdf),
     ("Mockup Builder gets the current file after switching files", check_mockup_after_switch),
-    ("SVG preview", check_svg),
+    ("SVG without units: preview, size shown as Scalable", check_svg),
+    ("SVG with real-world units: size in inches", check_svg_with_units),
+    ("Multi-page PDF shows a page-1-only notice", check_multi_page_pdf),
     ("EPS preview and size (Ghostscript)", check_eps),
     ("Embroidery file: stitch count and real size", check_embroidery),
     ("Raster image: quality verdict", check_raster_png),

@@ -536,6 +536,43 @@ class PreviewGenerator:
             pass
         return None
 
+    def _pdf_page_count(self, input_file):
+        """Number of pages (or Illustrator artboards) in a PDF/AI file."""
+        try:
+            import fitz
+            doc = fitz.open(input_file)
+            count = doc.page_count
+            doc.close()
+            return count
+        except Exception:
+            return 1
+
+    def _svg_size_inches(self, input_file):
+        """Physical size of an SVG, only when the file states one in real-world
+        units (in, mm, cm, pt, pc). Pixel or unitless sizes are not a print
+        size (apps disagree on pixels per inch), so those return None."""
+        try:
+            import re
+            with open(input_file, 'r', errors='ignore') as f:
+                head = f.read(20000)
+            root = re.search(r'<svg\b[^>]*>', head, re.IGNORECASE | re.DOTALL)
+            if not root:
+                return None
+            per_inch = {'in': 1.0, 'mm': 25.4, 'cm': 2.54, 'pt': 72.0, 'pc': 6.0}
+            sizes = []
+            for attr in ('width', 'height'):
+                m = re.search(r'(?<![-\w])' + attr + r'\s*=\s*["\']\s*([0-9]*\.?[0-9]+)\s*(in|mm|cm|pt|pc)\s*["\']',
+                              root.group(0), re.IGNORECASE)
+                if not m:
+                    return None
+                inches = float(m.group(1)) / per_inch[m.group(2).lower()]
+                if inches <= 0:
+                    return None
+                sizes.append(round(inches, 2))
+            return sizes[0], sizes[1]
+        except Exception:
+            return None
+
     def _convert_svg_with_cairosvg(self, input_file, output_file):
         """Convert SVG to PNG using CairoSVG"""
         try:
@@ -786,6 +823,19 @@ class PreviewGenerator:
                 size_in = self._pdf_page_size_inches(input_file)
                 if size_in:
                     preview['width_in'], preview['height_in'] = size_in
+                preview['page_count'] = self._pdf_page_count(input_file)
+            elif ext == '.svg':
+                size_in = self._svg_size_inches(input_file)
+                if size_in:
+                    preview['width_in'], preview['height_in'] = size_in
+                elif 'embedded raster' in file_type_label:
+                    preview['size_note'] = 'unknown'
+                else:
+                    # The preview is always rendered 1200 px wide, so pixels / 300
+                    # would report 4" for every SVG
+                    preview['size_note'] = 'scalable'
+            elif ext == '.cdr':
+                preview['size_note'] = 'unknown'
             return preview
 
         st.error("Could not convert file. For CorelDRAW (.cdr) files, please export as PDF or SVG from CorelDRAW and re-upload. For other formats, try exporting as PDF or SVG from your design application.")
@@ -1585,6 +1635,8 @@ def build_artbot_system_prompt():
         lines.append(f"Actual document size: {ctx['width_in']}\" × {ctx['height_in']}\" (the px dimensions above are the preview render, not the print size)")
     if ctx.get('size_kb'):
         lines.append(f"File size: {ctx['size_kb']} KB")
+    if ctx.get('page_count') and ctx['page_count'] > 1:
+        lines.append(f"Pages/artboards in file: {ctx['page_count']} (ArtCheck only previewed and analyzed page 1)")
 
     # Raster-specific
     if ctx.get('dpi'):
@@ -2037,6 +2089,9 @@ if uploaded_file:
 
             generator = get_preview_generator()
             result = generator.generate_preview(tmp_path, bg_type)
+            if result:
+                # Report the size of the file the user uploaded, not of the preview PNG
+                result['size_kb'] = round(uploaded_file.size / 1024, 2)
             # Generate transparent version for download
             _dl_result = generator.generate_preview(tmp_path, 'transparent_alpha')
             _dl_bytes = None
@@ -2110,6 +2165,7 @@ if uploaded_file:
                 'size_kb': result.get('size_kb'),
                 'width_in': result.get('width_in'),
                 'height_in': result.get('height_in'),
+                'page_count': result.get('page_count'),
                 'color_data': color_data,
                 'embroidery_info': result.get('embroidery_info'),
             }
@@ -2130,6 +2186,9 @@ if st.session_state.get('preview_image_bytes') and st.session_state.get('preview
     color_data = st.session_state.get('preview_color_data')
     img_bytes = st.session_state['preview_image_bytes']
     st.markdown('<div class="success-box">✅ Preview generated successfully!</div>', unsafe_allow_html=True)
+    if (result.get('page_count') or 1) > 1:
+        st.info(f"📄 This file has **{result['page_count']} pages**. ArtCheck previews and analyzes **page 1 only** — "
+                "the preview, size and colors below do not cover the other pages.")
     col1, col2 = st.columns([2, 1])
     with col1:
         import base64, streamlit.components.v1 as _components
@@ -2209,16 +2268,23 @@ function reset(){scale=fitScale;tx=0;ty=0;apply();}
     with col2:
         st.markdown("### Preview Info")
         if result.get('width'):
+            st.metric("Dimensions (px)", f"{result['width']} × {result['height']}")
             if result.get('width_in') and result.get('height_in'):
-                # Real document size (PDF/AI page, embroidery stitch area)
-                w_in, h_in = result['width_in'], result['height_in']
+                # Real document size (PDF/AI page, SVG with units, embroidery stitch area)
+                st.metric("Size (inches)", f'{result["width_in"]}" x {result["height_in"]}"')
+            elif result.get('size_note') == 'scalable':
+                st.metric("Size (inches)", "Scalable")
+                st.caption("No fixed size is set in this SVG. Vector art can be scaled to any print size.")
+            elif result.get('size_note') == 'unknown':
+                st.metric("Size (inches)", "Not detected")
+                st.caption("ArtCheck could not read a physical size from this file.")
             else:
                 w_in = round(result['width'] / 300, 2)
                 h_in = round(result['height'] / 300, 2)
-            st.metric("Dimensions (px)", f"{result['width']} × {result['height']}")
-            st.metric("Size (inches)", f'{w_in}" x {h_in}"')
+                st.metric("Size (inches)", f'{w_in}" x {h_in}"')
         if result.get('size_kb'):
-            st.metric("File Size", f"{result['size_kb']} KB")
+            _kb = result['size_kb']
+            st.metric("File Size", f"{_kb / 1024:.2f} MB" if _kb >= 1024 else f"{_kb} KB")
         if result.get('file_type'):
             st.metric("File Type", result['file_type'].title())
             if 'embedded raster' in result.get('file_type', '').lower():

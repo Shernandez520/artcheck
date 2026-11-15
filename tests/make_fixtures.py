@@ -54,6 +54,25 @@ def main(out_dir):
         '<circle cx="150" cy="100" r="50" fill="#ffffff"/></svg>'
     )
 
+    # Same artwork, but the SVG states a real-world size: 3in x 2in
+    (out / "logo_3x2in.svg").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<!-- stroke-width="9in" in a comment must not be read as the size -->\n'
+        '<svg xmlns="http://www.w3.org/2000/svg" width="3in" height="50.8mm" viewBox="0 0 300 200">'
+        '<rect x="20" y="20" width="260" height="160" fill="#008800"/></svg>'
+    )
+
+    # Two-page PDF (page 1 is 3" x 2")
+    c = canvas.Canvas(str(out / "two_pages.pdf"), pagesize=(216, 144))
+    for color in (RED, BLUE):
+        c.setFillColor(color)
+        c.rect(20, 20, 176, 104, fill=1, stroke=0)
+        c.setFillColor(BLACK)
+        c.rect(30, 30, 10, 10, fill=1, stroke=0)
+        c.rect(50, 30, 10, 10, fill=1, stroke=0)
+        c.circle(108, 72, 20, fill=1, stroke=0)
+        c.showPage()
+    c.save()
+
     # 3" x 2" EPS with CMYK fills (rendered by Ghostscript in production)
     (out / "logo_3x2in.eps").write_text(
         "%!PS-Adobe-3.0 EPSF-3.0\n"
