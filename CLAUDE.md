@@ -75,6 +75,18 @@ shown by `render_font_check()` above Color Analysis; also passed to ArtBot.
 - SVG: any `<text>` element; names from `font-family`.
 Returns None (section hidden) if the file can't be inspected. Page 1 only.
 
+### PdfConverter — vector PDF download for EPS / AI / SVG
+Runs at Generate Preview; bytes in `st.session_state['preview_pdf_bytes']`, facts
+in `result['pdf_export']`; shown by `render_pdf_export()` under the PNG download.
+**Never build the PDF from the preview PNG or any other image** — that puts a
+picture in a PDF wrapper (the mistake an earlier attempt made).
+- EPS: GS `pdfwrite -dEPSCrop` (paths, CMYK and `/Separation` spot colors survive).
+- AI: the PDF copy inside the file, re-saved with fitz; refuses files saved
+  without PDF compatibility.
+- SVG: `cairosvg.svg2pdf` (RGB only).
+- `_inspect()` counts paths / images / text in the output; the UI says "Vector
+  preserved" only when there are no images. CDR is not converted (no test file).
+
 ### Decoration Method Check — `decoration_rules.py`
 User picks a decoration method (+ imprint location and print width) and gets a
 pass / needs-attention / not-suitable verdict with reasons, an "also confirm"
@@ -142,7 +154,8 @@ after every deploy — upload is the core feature.
 with a 1 GB memory limit, and runs `tests/e2e_test.py` (Playwright) against it:
 PDF, EPS, SVG, DST, PNG, raster-in-PDF, .indd, file switching, Mockup Builder
 handoff, render cap, Auto background, sizes, multi-page notice, Font Check,
-Decoration Method Check. `tests/test_decoration_rules.py` unit-tests the rules. It also fails if temp files are left in
+Decoration Method Check, vector PDF export (the downloaded PDF is opened and
+checked for paths, images, page size and spot colors). `tests/test_decoration_rules.py` unit-tests the rules. It also fails if temp files are left in
 `/tmp` or the container is OOM-killed. Sample files come from
 `tests/make_fixtures.py` — no real artwork in the repo. GA requests are blocked.
 - Work on a branch and open a PR; merge only when the check is green.

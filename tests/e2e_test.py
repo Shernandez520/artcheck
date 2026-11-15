@@ -433,6 +433,92 @@ def check_results_survive_artbot(app):
     app.no_errors()
 
 
+def download_pdf(page):
+    """Click the PDF download button and return facts about the file that arrives."""
+    import fitz
+    with page.expect_download(timeout=30_000) as dl:
+        page.get_by_role("button", name="Download PDF").click()
+    path = dl.value.path()
+    doc = fitz.open(path)
+    first = doc[0]
+    facts = {
+        "name": dl.value.suggested_filename,
+        "pages": doc.page_count,
+        "paths": sum(len(p.get_drawings()) for p in doc),
+        "images": sum(len(p.get_images()) for p in doc),
+        "size_in": (round(first.rect.width / 72, 2), round(first.rect.height / 72, 2)),
+        "objects": " ".join(doc.xref_object(x) for x in range(1, doc.xref_length())),
+    }
+    doc.close()
+    return facts
+
+
+def check_pdf_export_svg(app):
+    page = app.fresh()
+    app.upload_vector("logo_3x2in.svg")
+    app.generate()
+    expect(page.get_by_text("Vector preserved").count() > 0, "the app does not say the PDF is vector")
+    pdf = download_pdf(page)
+    expect(pdf["name"] == "logo_3x2in.pdf", f"download is named {pdf['name']}")
+    expect(pdf["paths"] > 0 and pdf["images"] == 0, f"PDF from SVG has {pdf['paths']} vector paths and {pdf['images']} images")
+    expect(pdf["size_in"] == (3.0, 2.0), f"PDF page is {pdf['size_in']} inches, the SVG is 3 x 2")
+    app.no_errors()
+
+
+def check_pdf_export_ai(app):
+    page = app.fresh()
+    app.upload_vector("logo_3x2in.ai")
+    app.generate()
+    expect(page.get_by_text("Vector preserved").count() > 0, "the app does not say the PDF is vector")
+    pdf = download_pdf(page)
+    expect(pdf["paths"] > 0 and pdf["images"] == 0, f"PDF from AI has {pdf['paths']} vector paths and {pdf['images']} images")
+    expect(pdf["size_in"] == (3.0, 2.0), f"PDF page is {pdf['size_in']} inches, the AI file is 3 x 2")
+    app.no_errors()
+
+
+def check_pdf_export_eps(app):
+    page = app.fresh()
+    app.upload_vector("logo_3x2in.eps")
+    app.generate()
+    expect(page.get_by_text("Vector preserved").count() > 0, "the app does not say the PDF is vector")
+    pdf = download_pdf(page)
+    expect(pdf["paths"] > 0 and pdf["images"] == 0, f"PDF from EPS has {pdf['paths']} vector paths and {pdf['images']} images")
+    expect(pdf["size_in"] == (3.0, 2.0), f"PDF page is {pdf['size_in']} inches, the EPS artwork is 3 x 2")
+    app.no_errors()
+
+
+def check_pdf_export_eps_spot_color(app):
+    page = app.fresh()
+    app.upload_vector("spot_logo.eps")
+    app.generate()
+    pdf = download_pdf(page)
+    expect(pdf["paths"] > 0 and pdf["images"] == 0, f"PDF has {pdf['paths']} vector paths and {pdf['images']} images")
+    expect("/Separation" in pdf["objects"] and "PANTONE" in pdf["objects"],
+           "the Pantone spot color did not survive the conversion to PDF")
+    app.no_errors()
+
+
+def check_pdf_export_flags_raster(app):
+    page = app.fresh()
+    app.upload_vector("picture_in.svg")
+    app.generate()
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    expect("Vector preserved" not in body, "a PDF containing a raster image is labelled as vector")
+    expect("raster image" in body, "the app does not warn that the PDF contains a raster image")
+    pdf = download_pdf(page)
+    expect(pdf["images"] > 0, "expected the embedded picture to still be an image in the PDF")
+    app.no_errors()
+
+
+def check_pdf_export_not_offered_for_pdf(app):
+    page = app.fresh()
+    app.upload_vector("logo_red_3x2in.pdf")
+    app.generate()
+    expect(page.get_by_role("button", name="Download PDF").count() == 0, "a PDF upload should not offer a PDF conversion")
+    expect(page.get_by_role("button", name="Download PNG").count() > 0, "Download PNG button is missing")
+    app.no_errors()
+
+
 def check_indesign_message(app):
     page = app.fresh()
     app.upload("layout.indd")
@@ -455,6 +541,12 @@ CHECKS = [
     ("Decoration check: DTG resolution at the chosen location and print width", check_decoration_dtg_resolution),
     ("Decoration check: stitch file passes for a hat front", check_decoration_embroidery_stitch_file),
     ("Decoration check: DTFx flags art that fades to transparent", check_decoration_dtfx_fades),
+    ("PDF export from SVG is vector and the right size", check_pdf_export_svg),
+    ("PDF export from AI is vector and the right size", check_pdf_export_ai),
+    ("PDF export from EPS is vector and the right size (Ghostscript)", check_pdf_export_eps),
+    ("PDF export from EPS keeps the Pantone spot color (Ghostscript)", check_pdf_export_eps_spot_color),
+    ("PDF export warns when the original contains a raster image", check_pdf_export_flags_raster),
+    ("PDF export is not offered for files that are already PDF", check_pdf_export_not_offered_for_pdf),
     ("Embroidery file: stitch count and real size", check_embroidery),
     ("Raster image: quality verdict, print sizes at 300 and 200 dpi only", check_raster_png),
     ("Pure black and pure yellow are listed when painted; unused colors are not", check_pure_ink_colors),
@@ -489,7 +581,7 @@ def main():
         app = App(context, args.url, args.fixtures, args.screenshots)
 
         for number, (name, check) in enumerate(CHECKS, 1):
-            if check in (check_eps, check_fonts_eps) and skip_eps:
+            if check in (check_eps, check_fonts_eps, check_pdf_export_eps, check_pdf_export_eps_spot_color) and skip_eps:
                 RESULTS.append((name, None, "skipped (SKIP_EPS=1)"))
                 continue
             try:

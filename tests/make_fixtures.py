@@ -85,6 +85,34 @@ def main(out_dir):
     c.rect(154, 20, 50, 104, fill=1, stroke=0)       # red
     c.save()
 
+    # Illustrator files saved with PDF compatibility are PDFs inside
+    vector_pdf(out / "logo_3x2in.ai", 216, 144, BLUE)
+
+    # EPS with a Pantone spot color
+    (out / "spot_logo.eps").write_text(
+        "%!PS-Adobe-3.0 EPSF-3.0\n"
+        "%%BoundingBox: 0 0 216 144\n"
+        "%%EndComments\n"
+        "[/Separation (PANTONE 186 C) /DeviceCMYK {dup 0 mul exch dup 1 mul exch dup 0.81 mul exch 0.04 mul}] setcolorspace\n"
+        "1 setcolor\n"
+        "20 20 176 104 rectfill\n"
+        "showpage\n"
+        "%%EOF\n"
+    )
+
+    # SVG that is mostly a picture: one embedded PNG plus one vector rectangle
+    import base64, io
+    dot = Image.new("RGB", (40, 40), (200, 0, 0))
+    buf = io.BytesIO()
+    dot.save(buf, format="PNG")
+    (out / "picture_in.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '
+        'width="3in" height="2in" viewBox="0 0 300 200">'
+        '<rect x="10" y="10" width="80" height="60" fill="#008800"/>'
+        f'<image x="100" y="20" width="160" height="160" xlink:href="data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}"/>'
+        '</svg>'
+    )
+
     # Two-page PDF (page 1 is 3" x 2")
     c = canvas.Canvas(str(out / "two_pages.pdf"), pagesize=(216, 144))
     for color in (RED, BLUE):
