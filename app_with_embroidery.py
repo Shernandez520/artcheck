@@ -1755,6 +1755,147 @@ class FontChecker:
                 'sample': sample}
 
 
+class PdfConverter:
+    """Converts EPS, AI and SVG files to PDF WITHOUT rasterizing.
+
+    The art must never pass through an image on the way: building a PDF from
+    the preview PNG puts a picture inside a PDF wrapper. Each format is
+    converted from its drawing instructions instead:
+      EPS -> Ghostscript pdfwrite (keeps paths, CMYK values and spot colors)
+      AI  -> the PDF copy Illustrator stores inside the file, re-saved with fitz
+      SVG -> CairoSVG's PDF surface
+    Every result is inspected afterwards, so the UI can say whether the PDF
+    really is vector instead of assuming it.
+
+    convert() returns (pdf_bytes or None, info) where info is
+      {'ok', 'source', 'pages', 'paths', 'images', 'has_text', 'vector', 'error'}
+    """
+
+    SOURCE_FORMATS = ('.eps', '.ai', '.svg')
+
+    def can_convert(self, filename):
+        return Path(filename).suffix.lower() in self.SOURCE_FORMATS
+
+    def convert(self, input_file):
+        ext = Path(input_file).suffix.lower()
+        info = {'ok': False, 'source': ext, 'pages': 0, 'paths': 0, 'images': 0,
+                'has_text': False, 'vector': False, 'error': None}
+        out_pdf = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+                out_pdf = tmp.name
+            if ext == '.eps':
+                made = self._eps_to_pdf(input_file, out_pdf)
+            elif ext == '.ai':
+                made = self._ai_to_pdf(input_file, out_pdf, info)
+            elif ext == '.svg':
+                made = self._svg_to_pdf(input_file, out_pdf)
+            else:
+                made = False
+            if not made or not os.path.exists(out_pdf) or os.path.getsize(out_pdf) == 0:
+                info['error'] = info['error'] or "This file could not be converted to PDF."
+                return None, info
+            self._inspect(out_pdf, info)
+            if info['pages'] == 0:
+                info['error'] = "The converted PDF has no pages."
+                return None, info
+            with open(out_pdf, 'rb') as f:
+                pdf_bytes = f.read()
+            info['ok'] = True
+            return pdf_bytes, info
+        except Exception as e:
+            info['error'] = f"PDF conversion failed: {e}"
+            return None, info
+        finally:
+            if out_pdf and os.path.exists(out_pdf):
+                try:
+                    os.unlink(out_pdf)
+                except Exception:
+                    pass
+
+    def _eps_to_pdf(self, input_file, out_pdf):
+        base = ['gs', '-dNOPAUSE', '-dBATCH', '-dSAFER', '-sDEVICE=pdfwrite',
+                '-dAutoRotatePages=/None', f'-sOutputFile={out_pdf}']
+        # -dEPSCrop makes the page the size of the artwork instead of a letter page
+        for extra in (['-dEPSCrop'], []):
+            run = subprocess.run(base + extra + [input_file], capture_output=True, timeout=30)
+            if run.returncode == 0 and os.path.exists(out_pdf) and os.path.getsize(out_pdf) > 0:
+                return True
+        return False
+
+    def _ai_to_pdf(self, input_file, out_pdf, info):
+        import fitz
+        doc = fitz.open(input_file)
+        try:
+            if not doc.is_pdf or doc.page_count == 0:
+                info['error'] = "This .ai file has no PDF content inside, so it can't be converted here."
+                return False
+            if 'saved without PDF Content' in doc[0].get_text():
+                info['error'] = ("This .ai file was saved without PDF compatibility. Ask for it to be re-saved from "
+                                 "Illustrator with “Create PDF Compatible File” checked.")
+                return False
+            doc.save(out_pdf, garbage=3, deflate=True)
+            return True
+        finally:
+            doc.close()
+
+    def _svg_to_pdf(self, input_file, out_pdf):
+        import cairosvg
+        with open(input_file, 'rb') as f:
+            cairosvg.svg2pdf(bytestring=f.read(), write_to=out_pdf)
+        return True
+
+    def _inspect(self, pdf_path, info):
+        """Count vector paths, raster images and text in the converted PDF (first 5 pages)."""
+        import fitz
+        doc = fitz.open(pdf_path)
+        try:
+            info['pages'] = doc.page_count
+            for page in list(doc)[:5]:
+                info['paths'] += len(page.get_drawings())
+                info['images'] += len(page.get_images())
+                if page.get_text().strip():
+                    info['has_text'] = True
+        finally:
+            doc.close()
+        info['vector'] = info['images'] == 0 and (info['paths'] > 0 or info['has_text'])
+
+
+def render_pdf_export(pdf_bytes, info, filename_stem, live_text=False):
+    """Download button for the vector PDF, with what was verified about it."""
+    if not info:
+        return
+    if not info.get('ok') or not pdf_bytes:
+        st.caption(f"📄 PDF version not available: {info.get('error') or 'conversion failed'}")
+        return
+    st.download_button(
+        label="⬇️ Download PDF (vector)" if info.get('vector') else "⬇️ Download PDF",
+        data=pdf_bytes,
+        file_name=f"{filename_stem}.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+        key="download_pdf_button",
+    )
+    if info.get('vector'):
+        st.caption("✅ **Vector preserved** — converted straight from the original artwork, with no raster images in the PDF.")
+    elif info.get('images') and not info.get('paths') and not info.get('has_text'):
+        st.caption("⚠️ **Not vector.** The original file is a picture saved inside a vector file, so the PDF is a picture too.")
+    elif info.get('images'):
+        st.caption(f"⚠️ **Partly raster.** The PDF contains {info['images']} raster image(s) that were already in the original file. "
+                   "The rest of the art is vector.")
+    else:
+        st.caption("⚠️ ArtCheck could not confirm vector content in this PDF. Check it before sending.")
+    notes = []
+    if live_text:
+        notes.append("This file has live text. Where a font isn't inside the file, the PDF shows a substitute typeface — compare it with the original before sending.")
+    if info.get('source') == '.svg':
+        notes.append("SVG colors are RGB, so this PDF is RGB too.")
+    elif info.get('source') in ('.eps', '.ai'):
+        notes.append("CMYK values and Pantone spot colors are carried over from the original.")
+    for note in notes:
+        st.caption(note)
+
+
 def render_font_check(font_check):
     """Show whether the file still contains live text (fonts not outlined)."""
     if not font_check:
@@ -2194,7 +2335,7 @@ def _clear_file_state():
     """Forget everything about the current file: preview, analysis, ArtBot's
     file context, Mockup Builder handoff and raster-in-PDF caches."""
     for _key in ('preview_image_bytes', 'preview_result', 'preview_color_data', 'preview_filename',
-                 'preview_download_bytes', 'artbot_file_context', '_raster_context_synced',
+                 'preview_download_bytes', 'preview_pdf_bytes', 'artbot_file_context', '_raster_context_synced',
                  '_raster_display_bytes', '_raster_analysis', '_raster_filename'):
         st.session_state.pop(_key, None)
     _old_token = st.session_state.pop('mockup_handoff_token', None)
@@ -2240,6 +2381,7 @@ if uploaded_file:
         st.session_state.pop('preview_color_data', None)
         st.session_state.pop('preview_filename', None)
         st.session_state.pop('preview_download_bytes', None)
+        st.session_state.pop('preview_pdf_bytes', None)
         st.session_state.pop('artbot_file_context', None)
         st.session_state.pop('_raster_context_synced', None)
         st.session_state.pop('_raster_display_bytes', None)
@@ -2480,6 +2622,11 @@ if uploaded_file:
             if result and file_ext in [".pdf", ".ai", ".eps", ".svg"]:
                 result['font_check'] = FontChecker().check(tmp_path)
 
+            # Vector PDF version of EPS / AI / SVG files (never built from the preview image)
+            _pdf_bytes = None
+            if result and PdfConverter().can_convert(uploaded_file.name):
+                _pdf_bytes, result['pdf_export'] = PdfConverter().convert(tmp_path)
+
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
 
@@ -2515,6 +2662,7 @@ if uploaded_file:
             _img.save(_buf, format='PNG', optimize=True)
             st.session_state['preview_image_bytes'] = _buf.getvalue()
             st.session_state['preview_download_bytes'] = _dl_bytes
+            st.session_state['preview_pdf_bytes'] = _pdf_bytes  # None unless EPS / AI / SVG
             st.session_state['preview_result'] = result
             st.session_state['preview_color_data'] = color_data
             st.session_state['preview_filename'] = uploaded_file.name
@@ -2694,6 +2842,8 @@ Despite the file extension, this is not a true vector file. It's a raster image 
             use_container_width=True
         )
         _filename_stem = st.session_state.get('preview_filename', 'artwork').rsplit('.', 1)[0]
+        render_pdf_export(st.session_state.get('preview_pdf_bytes'), result.get('pdf_export'), _filename_stem,
+                          live_text=bool((result.get('font_check') or {}).get('live_text')))
         _render_mockup_builder_button(_dl_data, _filename_stem)
         if st.button("🔄 Upload New File", use_container_width=True):
             _clear_file_state()

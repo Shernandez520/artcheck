@@ -3,3 +3,4 @@ playwright
 reportlab
 pyembroidery==1.5.1
 Pillow
+pymupdf==1.26.5  # to inspect the PDFs the app lets users download
