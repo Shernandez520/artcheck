@@ -61,6 +61,14 @@ def main(out_dir):
         '<rect x="20" y="20" width="260" height="160" fill="#008800"/></svg>'
     )
 
+    # Seven different CMYK colors (triggers the many-colors warning).
+    # None is a pure 100% C, M, Y or K: ColorExtractor skips those as registration artifacts.
+    c = canvas.Canvas(str(out / "seven_colors.pdf"), pagesize=(216, 144))
+    for i, cmyk in enumerate([(0, 1, 1, 0), (1, 0.6, 0, 0), (0, 0.2, 1, 0), (1, 0, 1, 0), (0, 0.5, 1, 0), (0.5, 1, 0, 0), (0, 0, 0, 0.8)]):
+        c.setFillColor(CMYKColor(*cmyk))
+        c.rect(10 + i * 28, 20, 24, 104, fill=1, stroke=0)
+    c.save()
+
     # Two-page PDF (page 1 is 3" x 2")
     c = canvas.Canvas(str(out / "two_pages.pdf"), pagesize=(216, 144))
     for color in (RED, BLUE):

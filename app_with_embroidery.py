@@ -235,16 +235,18 @@ CORE EXPERTISE:
 DECORATION METHODS & CUSTOMER-FACING LANGUAGE:
 
 Screen Printing:
-- Tech: Spot colors, halftones, underbase, max 4-6 colors
+- Tech: PMS spot colors, halftones for gradients, underbase on colored garments. Each color is a separate screen and adds cost; the maximum number of colors varies by decorator
 - Customer: "Each color is a separate screen, which affects pricing. Complex designs with many colors work better with other methods."
 
 Embroidery:
-- Tech: Stitch files (.dst, .pes), 8k-12k stitch limit for left chest
+- Tech: Stitch files (.dst, .pes) or digitizing from art. Stitch count drives price and is only known after digitizing; limits vary by decorator. Smallest text about 3/16" tall. Gradients can't be stitched as smooth blends
 - Customer: "Your logo needs to be converted to stitch data. More complex designs have higher stitch counts which increase cost and can cause fabric puckering."
 
 DTG (Direct-to-Garment):
-- Tech: Full color raster, 300 DPI minimum, white underbase
+- Tech: Full color, vector or raster. Raster needs at least 200 DPI at print size (300 DPI recommended). RGB preferred. White underbase on dark garments
 - Customer: "This prints like an inkjet printer directly on the shirt. Great for photos and complex designs, but works best on cotton and light colors."
+
+CONSISTENCY WITH ARTCHECK: Specs vary by decorator. ArtCheck's Decoration Method Check uses Dubow Textile's published guidelines as a general guide. If the file context includes a decoration method check result, stay consistent with its numbers and verdict, and remind the rep to confirm specifics with their own decorator.
 
 CRITICAL: Frame technical issues as protecting the customer's brand quality, not as limitations.
 
@@ -934,7 +936,7 @@ class RasterAnalyzer:
                 results['warnings'].append("⚠️ This image may work for small print sizes, but quality isn't guaranteed. Check the print size table below.")
 
             if img.mode == 'RGB':
-                results['warnings'].append("⚠️ This file uses RGB color. Most print methods require CMYK — colors may shift in production.")
+                results['warnings'].append("⚠️ This file uses RGB color. That is fine for digital print (DTG), where RGB is recommended, but colors can shift in other print methods.")
             elif img.mode == 'RGBA':
                 results['warnings'].append("ℹ️ This image has a transparent background.")
             elif img.mode == 'P':
@@ -969,7 +971,7 @@ class RasterAnalyzer:
                 if dpi <= 72 and results['verdict'] != 'good':
                     results['recommendations'].append("Do not use this file for production — request a replacement from the customer.")
             if img.mode == 'RGB':
-                results['recommendations'].append("Have your art department convert to CMYK before sending to production.")
+                results['recommendations'].append("For print methods other than digital print (DTG), have your art department convert to CMYK or match Pantone colors before production.")
 
         except Exception as e:
             results['warnings'].append(f"Could not analyze image: {str(e)}")
@@ -1011,14 +1013,14 @@ def render_raster_results(analysis, filename):
         st.markdown("**📐 Usable Print Sizes:**")
         size_300 = sizes.get('300dpi', (0, 0))
         size_200 = sizes.get('200dpi', (0, 0))
-        size_150 = sizes.get('150dpi', (0, 0))
+        # Same thresholds as the Decoration Method Check (decoration_rules.MIN_DPI / GOOD_DPI)
         st.markdown(f"""
-| Quality | DPI | Max Print Size | Suitable For |
-|---------|-----|----------------|-------------|
-| High | 300 | {size_300[0]}" × {size_300[1]}" | Screen print, laser, pad print |
-| Acceptable | 200 | {size_200[0]}" × {size_200[1]}" | Most methods at smaller sizes |
-| Minimum | 150 | {size_150[0]}" × {size_150[1]}" | DTG only |
+| Quality | DPI | Max Print Size | Use |
+|---------|-----|----------------|-----|
+| Recommended | 300 | {size_300[0]}" × {size_300[1]}" | Best quality for any print method |
+| Minimum | 200 | {size_200[0]}" × {size_200[1]}" | Lowest acceptable for print |
 """)
+        st.caption("Printing larger than the Minimum size will look soft or pixelated. Pick a method in the Decoration Method Check below to test a specific print size.")
 
     # Warnings
     if analysis.get('warnings'):
@@ -1335,7 +1337,7 @@ class ColorExtractor:
 
             total_colors = len(results['fills']) + len(results['spot_colors'])
             if total_colors > 6:
-                results['warnings'].append(f"⚠️ {total_colors} colors detected — screen printing typically supports 4-6 colors max")
+                results['warnings'].append(f"⚠️ {total_colors} colors detected — in screen printing each color is a separate screen, so cost rises with every color")
 
             # Detect mixed color spaces
             spaces = set(f.get('space') for f in results['fills'])
@@ -1424,7 +1426,7 @@ class ColorExtractor:
                     results['warnings'].append("Could not extract color data from this EPS file.")
                 total = len(fills) + len(spot_colors)
                 if total > 6:
-                    results['warnings'].append(f"⚠️ {total} colors detected — screen printing typically supports 4-6 colors max")
+                    results['warnings'].append(f"⚠️ {total} colors detected — in screen printing each color is a separate screen, so cost rises with every color")
                 return results
 
         except Exception as e:
@@ -1558,7 +1560,7 @@ class ColorExtractor:
 
             total = len(results['fills']) + len(results['spot_colors'])
             if total > 6:
-                results['warnings'].append(f"⚠️ {total} colors detected — screen printing typically supports 4-6 colors max")
+                results['warnings'].append(f"⚠️ {total} colors detected — in screen printing each color is a separate screen, so cost rises with every color")
 
             return results
         except Exception as e:
