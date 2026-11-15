@@ -73,6 +73,40 @@ def main(out_dir):
         c.showPage()
     c.save()
 
+    # Live (non-outlined) text: Helvetica is NOT embedded, Vera IS embedded
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    pdfmetrics.registerFont(TTFont("Vera", "Vera.ttf"))  # ships with reportlab
+    c = canvas.Canvas(str(out / "live_text.pdf"), pagesize=(216, 144))
+    c.setFillColor(RED)
+    c.rect(20, 80, 176, 44, fill=1, stroke=0)
+    c.setFillColor(BLACK)
+    c.setFont("Helvetica", 18)
+    c.drawString(20, 50, "Acme Plumbing")
+    c.setFont("Vera", 10)
+    c.drawString(20, 30, "Since 1987")
+    c.save()
+
+    (out / "live_text.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="3in" height="2in" viewBox="0 0 300 200">'
+        '<rect x="20" y="20" width="260" height="80" fill="#008800"/>'
+        '<text x="20" y="150" font-family="Georgia, serif" font-size="32">Acme Plumbing</text></svg>'
+    )
+
+    (out / "live_text.eps").write_text(
+        "%!PS-Adobe-3.0 EPSF-3.0\n"
+        "%%BoundingBox: 0 0 216 144\n"
+        "%%DocumentFonts: Helvetica\n"
+        "%%EndComments\n"
+        "0 1 1 0 setcmykcolor\n"
+        "20 80 176 44 rectfill\n"
+        "0 0 0 1 setcmykcolor\n"
+        "/Helvetica findfont 18 scalefont setfont\n"
+        "20 50 moveto (Acme Plumbing) show\n"
+        "showpage\n"
+        "%%EOF\n"
+    )
+
     # 3" x 2" EPS with CMYK fills (rendered by Ghostscript in production)
     (out / "logo_3x2in.eps").write_text(
         "%!PS-Adobe-3.0 EPSF-3.0\n"

@@ -1543,6 +1543,167 @@ class ColorExtractor:
 
 
 
+class FontChecker:
+    """Finds live (non-outlined) text in vector files.
+
+    check() returns None when the file could not be inspected, otherwise:
+      {'live_text': bool,
+       'fonts': [{'name': str, 'embedded': True | False | None}],   # None = not known
+       'sample': str}                                               # a few words of the text
+    Only page 1 is inspected, matching the preview and color analysis.
+    """
+
+    MAX_FONTS = 8
+
+    def check(self, input_file):
+        ext = Path(input_file).suffix.lower()
+        try:
+            if ext in ('.pdf', '.ai'):
+                return self._check_pdf(input_file)
+            if ext == '.eps':
+                return self._check_eps(input_file)
+            if ext == '.svg':
+                return self._check_svg(input_file)
+        except Exception:
+            return None
+        return None
+
+    @staticmethod
+    def _clean_font_name(name):
+        """Drop the 6-letter subset prefix PDFs add, e.g. 'ABCDEF+Helvetica-Bold'."""
+        import re
+        return re.sub(r'^[A-Z]{6}\+', '', (name or '').strip())
+
+    def _check_pdf(self, input_file):
+        import fitz
+        doc = fitz.open(input_file)
+        try:
+            page = doc[0]
+            # Which fonts are embedded in the file (ext 'n/a' = not embedded)
+            embedded = {}
+            for font in page.get_fonts(full=True):
+                embedded[self._clean_font_name(font[3])] = (font[1] != 'n/a')
+
+            names, words = [], []
+            for block in page.get_text("dict").get("blocks", []):
+                if block.get("type") != 0:
+                    continue
+                for line in block.get("lines", []):
+                    for span in line.get("spans", []):
+                        text = (span.get("text") or "").strip()
+                        if not text:
+                            continue
+                        name = self._clean_font_name(span.get("font"))
+                        if name and name not in names:
+                            names.append(name)
+                        if len(" ".join(words)) < 60:
+                            words.append(text)
+        finally:
+            doc.close()
+
+        fonts = [{'name': n, 'embedded': embedded.get(n)} for n in names[:self.MAX_FONTS]]
+        return {'live_text': bool(names or words), 'fonts': fonts, 'sample': " ".join(words)[:60]}
+
+    def _eps_declared_fonts(self, input_file):
+        """Font names an EPS says it uses (header comments and findfont calls)."""
+        import re
+        try:
+            with open(input_file, 'rb') as f:
+                text = f.read(2_000_000).decode('latin-1', errors='ignore')
+        except Exception:
+            return []
+        names = []
+        for m in re.finditer(r'%%DocumentFonts:[ \t]*([^\r\n]*)', text):
+            names += [t for t in m.group(1).split() if t != '(atend)']
+        names += re.findall(r'%%IncludeResource:[ \t]*font[ \t]+(\S+)', text)
+        names += re.findall(r'/([A-Za-z][A-Za-z0-9_\-]{1,60})\s+(?:findfont|selectfont)\b', text)
+        seen = []
+        for n in names:
+            if n not in seen:
+                seen.append(n)
+        return seen[:self.MAX_FONTS]
+
+    def _check_eps(self, input_file):
+        """EPS -> PDF with Ghostscript, then look for text the same way as a PDF."""
+        tmp_pdf = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+                tmp_pdf = tmp.name
+            gs = subprocess.run([
+                'gs', '-dNOPAUSE', '-dBATCH', '-dSAFER',
+                '-sDEVICE=pdfwrite', f'-sOutputFile={tmp_pdf}', input_file
+            ], capture_output=True, timeout=30)
+            if gs.returncode != 0 or not os.path.exists(tmp_pdf) or os.path.getsize(tmp_pdf) == 0:
+                return None
+            result = self._check_pdf(tmp_pdf)
+        finally:
+            if tmp_pdf and os.path.exists(tmp_pdf):
+                try:
+                    os.unlink(tmp_pdf)
+                except Exception:
+                    pass
+        if result and result['live_text']:
+            # Ghostscript may swap in its own look-alike fonts, so prefer the
+            # names the EPS itself declares. Embedding is not known for EPS.
+            declared = self._eps_declared_fonts(input_file)
+            names = declared or [f['name'] for f in result['fonts']]
+            result['fonts'] = [{'name': n, 'embedded': None} for n in names]
+        return result
+
+    def _check_svg(self, input_file):
+        import re
+        with open(input_file, 'r', errors='ignore') as f:
+            content = f.read(5_000_000)
+        if not re.search(r'<text[\s>]', content, re.IGNORECASE):
+            return {'live_text': False, 'fonts': [], 'sample': ''}
+        names = []
+        for m in re.finditer(r'font-family\s*[:=]\s*["\']?\s*([^;"\'<>]+)', content, re.IGNORECASE):
+            first = m.group(1).split(',')[0].strip().strip('"\'').replace('&quot;', '').strip()
+            if first and first not in names:
+                names.append(first)
+        sample = " ".join(re.sub(r'<[^>]+>', ' ', " ".join(
+            re.findall(r'<text[\s>].*?</text>', content, re.IGNORECASE | re.DOTALL)[:3])).split())[:60]
+        return {'live_text': True, 'fonts': [{'name': n, 'embedded': None} for n in names[:self.MAX_FONTS]],
+                'sample': sample}
+
+
+def render_font_check(font_check):
+    """Show whether the file still contains live text (fonts not outlined)."""
+    if not font_check:
+        return
+    import html as _html
+    st.markdown("---")
+    st.markdown("### 🔤 Font Check")
+    if not font_check.get('live_text'):
+        st.markdown('<div style="padding:12px;border-radius:8px;background:#1a6b3a;color:#fff;font-size:1rem;'
+                    'font-weight:bold;margin-bottom:12px;">✅ No live text found — fonts are outlined (or the file has no text)</div>',
+                    unsafe_allow_html=True)
+        return
+
+    st.markdown('<div style="padding:12px;border-radius:8px;background:#8b1a1a;color:#fff;font-size:1rem;'
+                'font-weight:bold;margin-bottom:12px;">⚠️ Live text found — fonts are NOT outlined</div>',
+                unsafe_allow_html=True)
+    fonts = font_check.get('fonts') or []
+    if fonts:
+        parts = []
+        for f in fonts:
+            note = ' (not embedded)' if f.get('embedded') is False else (' (embedded)' if f.get('embedded') else '')
+            parts.append(f"<code>{_html.escape(f['name'])}</code>{note}")
+        st.markdown("**Fonts used:** " + ", ".join(parts), unsafe_allow_html=True)
+    if font_check.get('sample'):
+        st.markdown(f"**Text found:** <code>{_html.escape(font_check['sample'])}</code>", unsafe_allow_html=True)
+    if any(f.get('embedded') is False for f in fonts):
+        st.caption("Fonts marked “not embedded” are not inside the file at all — the preview above may already be showing a substitute typeface.")
+    st.warning("""
+**This file contains editable text that has not been converted to outlines.**
+
+If the art department doesn't have the exact same fonts installed, the text can change to a different typeface, shift, or reflow when the file is opened.
+
+**What to tell your customer:**
+> "Your file contains live text that hasn't been converted to outlines. To make sure your text prints exactly as you designed it, please convert all text to outlines (in Illustrator: Select All, then Type → Create Outlines) and resend the file."
+    """)
+
+
 def render_color_results(color_data, file_ext):
     """Render color extraction results in Streamlit"""
     if not color_data:
@@ -1664,6 +1825,17 @@ def build_artbot_system_prompt():
             lines.append(f"Fill colors detected: {len(fills)}")
         if color_data.get('gradients'):
             lines.append(f"Gradients detected: {len(color_data['gradients'])}")
+
+    # Fonts
+    fc = ctx.get('font_check')
+    if fc:
+        if fc.get('live_text'):
+            font_names = ', '.join(
+                f['name'] + (' (not embedded)' if f.get('embedded') is False else '') for f in fc.get('fonts', [])
+            ) or 'font names not readable'
+            lines.append(f"Font check: LIVE TEXT FOUND — fonts are NOT outlined. Fonts used: {font_names}")
+        else:
+            lines.append("Font check: no live text found (fonts are outlined or the file has no text)")
 
     # Embroidery
     emb = ctx.get('embroidery_info')
@@ -2119,6 +2291,10 @@ if uploaded_file:
                 extractor = get_color_extractor()
                 color_data = extractor.extract(tmp_path)
 
+            # Live-text / fonts-not-outlined check (same file types as color analysis)
+            if result and file_ext in [".pdf", ".ai", ".eps", ".svg"]:
+                result['font_check'] = FontChecker().check(tmp_path)
+
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
 
@@ -2166,6 +2342,7 @@ if uploaded_file:
                 'width_in': result.get('width_in'),
                 'height_in': result.get('height_in'),
                 'page_count': result.get('page_count'),
+                'font_check': result.get('font_check'),
                 'color_data': color_data,
                 'embroidery_info': result.get('embroidery_info'),
             }
@@ -2351,6 +2528,7 @@ Despite the file extension, this is not a true vector file. It's a raster image 
                     del st.session_state[_k]
             st.session_state['file_uploader_key'] = st.session_state.get('file_uploader_key', 0) + 1
             st.rerun()
+    render_font_check(result.get('font_check'))
     if color_data:
         stored_filename = st.session_state.get('preview_filename', '')
         render_color_results(color_data, Path(stored_filename).suffix.lower())

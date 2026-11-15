@@ -120,6 +120,7 @@ def check_vector_pdf(app):
     expect(page.get_by_text("ArtCheck previews and analyzes").count() == 0, "single-page PDF shows the multi-page notice")
     expect(page.get_by_text("Color Analysis").count() > 0, "Color Analysis section is missing")
     expect(page.get_by_text("Document Color Mode: CMYK").count() > 0, "CMYK document was not reported as CMYK")
+    expect(page.get_by_text("No live text found").count() > 0, "file without text did not pass the Font Check")
     expect(page.get_by_role("button", name="Download PNG").count() > 0, "Download PNG button is missing")
     app.no_errors()
 
@@ -173,6 +174,47 @@ def check_eps(app):
     m = metrics(page)
     expect(m.get("Size (inches)") == '3.0" x 2.0"', f"expected 3.0\" x 2.0\", page shows {m.get('Size (inches)')}")
     expect(page.get_by_text("Color Analysis").count() > 0, "Color Analysis section is missing")
+    expect(page.get_by_text("No live text found").count() > 0, "EPS without text did not pass the Font Check")
+    app.no_errors()
+
+
+def font_check_text(page):
+    """Everything shown from the Font Check heading down."""
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    expect("Font Check" in body, "Font Check section is missing")
+    return body.split("Font Check", 1)[1]
+
+
+def check_fonts_pdf(app):
+    page = app.fresh()
+    app.upload_vector("live_text.pdf")
+    app.generate()
+    text = font_check_text(page)
+    expect("Live text found" in text, "live text in the PDF was not flagged")
+    expect("Helvetica (not embedded)" in text, "Helvetica should be listed as not embedded")
+    expect("BitstreamVeraSans-Roman (embedded)" in text, "Vera should be listed as embedded")
+    expect("Acme Plumbing" in text, "the text that was found is not shown")
+    expect("What to tell your customer" in text, "customer script is missing")
+    app.no_errors()
+
+
+def check_fonts_svg(app):
+    page = app.fresh()
+    app.upload_vector("live_text.svg")
+    app.generate()
+    text = font_check_text(page)
+    expect("Live text found" in text, "live text in the SVG was not flagged")
+    expect("Georgia" in text, "font name Georgia is not listed")
+    app.no_errors()
+
+
+def check_fonts_eps(app):
+    page = app.fresh()
+    app.upload_vector("live_text.eps")
+    app.generate()
+    text = font_check_text(page)
+    expect("Live text found" in text, "live text in the EPS was not flagged")
+    expect("Helvetica" in text, "font name Helvetica is not listed")
     app.no_errors()
 
 
@@ -238,6 +280,9 @@ CHECKS = [
     ("SVG with real-world units: size in inches", check_svg_with_units),
     ("Multi-page PDF shows a page-1-only notice", check_multi_page_pdf),
     ("EPS preview and size (Ghostscript)", check_eps),
+    ("Font Check flags live text in a PDF, with embedded / not embedded", check_fonts_pdf),
+    ("Font Check flags live text in an SVG", check_fonts_svg),
+    ("Font Check flags live text in an EPS (Ghostscript)", check_fonts_eps),
     ("Embroidery file: stitch count and real size", check_embroidery),
     ("Raster image: quality verdict", check_raster_png),
     ("Raster-in-PDF is detected", check_raster_in_pdf),
@@ -267,7 +312,7 @@ def main():
         app = App(context, args.url, args.fixtures, args.screenshots)
 
         for number, (name, check) in enumerate(CHECKS, 1):
-            if check is check_eps and skip_eps:
+            if check in (check_eps, check_fonts_eps) and skip_eps:
                 RESULTS.append((name, None, "skipped (SKIP_EPS=1)"))
                 continue
             try:
