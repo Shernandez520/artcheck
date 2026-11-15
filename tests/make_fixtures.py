@@ -198,6 +198,8 @@ def main(out_dir):
 
     # InDesign is unsupported; the app only looks at the file name
     (out / "layout.indd").write_bytes(b"not a real InDesign file")
+    # Same for GIMP's .xcf
+    (out / "artwork.xcf").write_bytes(b"gimp xcf file\x00not a real GIMP file")
 
     print(f"Created {len(list(out.iterdir()))} sample files in {out}")
 
