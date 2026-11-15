@@ -57,6 +57,16 @@ spot names from original EPS text (printable-ASCII filter for binary garbage).
 **Key operators:** Illustrator AI/PDF uses `scn`; GS-converted EPS uses `k`;
 plain PostScript uses `setcmykcolor`/`setgray`.
 
+### FontChecker — live text / fonts not outlined
+Runs on .pdf/.ai/.eps/.svg after preview generation; result stored in
+`result['font_check']` (`live_text`, `fonts[{name, embedded}]`, `sample`) and
+shown by `render_font_check()` above Color Analysis; also passed to ArtBot.
+- PDF/AI: fitz `get_text("dict")` spans on page 1; `get_fonts()` ext `n/a` = not embedded.
+- EPS: GS `pdfwrite` → same PDF check; font names taken from the EPS itself
+  (`%%DocumentFonts`, `findfont`) because GS substitutes look-alike fonts.
+- SVG: any `<text>` element; names from `font-family`.
+Returns None (section hidden) if the file can't be inspected. Page 1 only.
+
 ### ArtBot (sidebar chat)
 Senior production artist persona; sees uploaded file context (colors, dims,
 warnings) injected into the system prompt. `st.form` for Enter-to-send, key
@@ -105,7 +115,7 @@ after every deploy — upload is the core feature.
 `.github/workflows/tests.yml` builds the production Docker image, starts the app
 with a 1 GB memory limit, and runs `tests/e2e_test.py` (Playwright) against it:
 PDF, EPS, SVG, DST, PNG, raster-in-PDF, .indd, file switching, Mockup Builder
-handoff, render cap, Auto background. It also fails if temp files are left in
+handoff, render cap, Auto background, sizes, multi-page notice, Font Check. It also fails if temp files are left in
 `/tmp` or the container is OOM-killed. Sample files come from
 `tests/make_fixtures.py` — no real artwork in the repo. GA requests are blocked.
 - Work on a branch and open a PR; merge only when the check is green.
