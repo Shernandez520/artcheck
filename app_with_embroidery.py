@@ -2126,12 +2126,38 @@ embroidery_formats = ".dst, .pes, .exp, .jef, .vp3, .xxx, .u01"
 raster_formats = ".png, .jpg, .gif, .tiff, .bmp, .webp"
 st.info(f"**Supported:** Vector files ({vector_formats}) | Embroidery files ({embroidery_formats}) | Raster images ({raster_formats})")
 
+def _clear_file_state():
+    """Forget everything about the current file: preview, analysis, ArtBot's
+    file context, Mockup Builder handoff and raster-in-PDF caches."""
+    for _key in ('preview_image_bytes', 'preview_result', 'preview_color_data', 'preview_filename',
+                 'preview_download_bytes', 'artbot_file_context', '_raster_context_synced',
+                 '_raster_display_bytes', '_raster_analysis', '_raster_filename'):
+        st.session_state.pop(_key, None)
+    _old_token = st.session_state.pop('mockup_handoff_token', None)
+    if _old_token:
+        _get_mockup_handoff_store().pop(_old_token, None)
+    for _k in list(st.session_state.keys()):
+        if _k.startswith('raster_pdf_bytes_') or _k.startswith('raster_pdf_analysis_'):
+            del st.session_state[_k]
+
+
+def _on_uploader_change(uploader_key):
+    """Runs only when the USER changes the uploader. If they removed the file
+    with the X, clear the results too. (The uploader can also come back empty
+    after an ArtBot rerun; no callback fires then, so cached results stay.)"""
+    if st.session_state.get(uploader_key) is None:
+        _clear_file_state()
+
+
+_uploader_key = f"uploader_{st.session_state.get('file_uploader_key', 0)}"
 uploaded_file = st.file_uploader(
     "🎨 Drag and drop your file here or click to browse",
-    key=f"uploader_{st.session_state.get('file_uploader_key', 0)}",
+    key=_uploader_key,
     type=['ai', 'eps', 'pdf', 'svg', 'cdr', 'xcf', 'indd', 'dst', 'pes', 'exp', 'jef', 'vp3', 'xxx', 'u01',
           'png', 'jpg', 'jpeg', 'gif', 'tiff', 'tif', 'bmp', 'webp'],
-    help="Supports vector, embroidery, and raster image files up to 50MB"
+    help="Supports vector, embroidery, and raster image files up to 50MB",
+    on_change=_on_uploader_change,
+    args=(_uploader_key,),
 )
 
 if uploaded_file:
@@ -2177,19 +2203,7 @@ if uploaded_file:
     with col_clear:
         if st.button("🔄 New File", use_container_width=True, help="Clear this file and upload a new one"):
             st.session_state['file_uploader_key'] = st.session_state.get('file_uploader_key', 0) + 1
-            st.session_state.pop('artbot_file_context', None)
-            st.session_state.pop('preview_result', None)
-            st.session_state.pop('preview_color_data', None)
-            st.session_state.pop('preview_filename', None)
-            st.session_state.pop('preview_image_bytes', None)
-            st.session_state.pop('preview_download_bytes', None)
-            st.session_state.pop('_raster_display_bytes', None)
-            st.session_state.pop('_raster_analysis', None)
-            st.session_state.pop('_raster_filename', None)
-            st.session_state.pop('_raster_context_synced', None)
-            for _k in list(st.session_state.keys()):
-                if _k.startswith('raster_pdf_bytes_') or _k.startswith('raster_pdf_analysis_'):
-                    del st.session_state[_k]
+            _clear_file_state()
             st.rerun()
 
     # Check for raster-in-PDF before normal vector flow
@@ -2618,24 +2632,7 @@ Despite the file extension, this is not a true vector file. It's a raster image 
         _filename_stem = st.session_state.get('preview_filename', 'artwork').rsplit('.', 1)[0]
         _render_mockup_builder_button(_dl_data, _filename_stem)
         if st.button("🔄 Upload New File", use_container_width=True):
-            st.session_state.pop('preview_image_bytes', None)
-            st.session_state.pop('preview_result', None)
-            st.session_state.pop('preview_color_data', None)
-            st.session_state.pop('preview_filename', None)
-            st.session_state.pop('preview_download_bytes', None)
-            st.session_state.pop('artbot_file_context', None)
-            st.session_state.pop('_raster_context_synced', None)
-            st.session_state.pop('_raster_display_bytes', None)
-            st.session_state.pop('_raster_analysis', None)
-            st.session_state.pop('_raster_filename', None)
-            # Clear mockup handoff if any
-            _old_token = st.session_state.pop('mockup_handoff_token', None)
-            if _old_token:
-                _get_mockup_handoff_store().pop(_old_token, None)
-            # Clear any raster-in-PDF caches
-            for _k in list(st.session_state.keys()):
-                if _k.startswith('raster_pdf_bytes_') or _k.startswith('raster_pdf_analysis_'):
-                    del st.session_state[_k]
+            _clear_file_state()
             st.session_state['file_uploader_key'] = st.session_state.get('file_uploader_key', 0) + 1
             st.rerun()
     render_decoration_check(decoration_rules.facts_from_vector(result, color_data),
