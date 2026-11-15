@@ -469,6 +469,10 @@ class PreviewGenerator:
     DEFAULT_DPI = 300
     PREVIEW_MAX_WIDTH = 1200
     PREVIEW_MAX_HEIGHT = 1200
+    # Longest side, in pixels, of a fitz render. Without a cap a letter-size
+    # page renders at 6120x7920 (~700 MB peak) and a poster cannot render at all.
+    # 4000 px keeps pages up to ~13" at 300+ DPI; small artwork is unaffected.
+    RENDER_MAX_PX = 4000
     
     def __init__(self):
         self.embroidery = EmbroideryConverter()
@@ -591,6 +595,8 @@ class PreviewGenerator:
             rect = page.rect
             longest = max(rect.width, rect.height)
             scale = max(10, 1200 / longest)
+            # Cap large pages so the render can't exhaust server memory
+            scale = min(scale, self.RENDER_MAX_PX / longest)
             mat = fitz.Matrix(scale, scale)
             pix = page.get_pixmap(matrix=mat, alpha=True)
             pix.save(output_file)
@@ -633,7 +639,10 @@ class PreviewGenerator:
             elif bg_type == 'auto':
                 # Check if artwork is mostly light — if so, use dark bg
                 grayscale = img.convert('L')
-                avg = sum(grayscale.getdata()) / len(grayscale.getdata())
+                # Same mean brightness as before, computed in C instead of a
+                # Python loop over every pixel (seconds faster on large pages)
+                from PIL import ImageStat
+                avg = ImageStat.Stat(grayscale).mean[0]
                 bg_color = (30, 30, 30, 255) if avg > 200 else (255, 255, 255, 255)
             else:
                 bg_color = (255, 255, 255, 255)
