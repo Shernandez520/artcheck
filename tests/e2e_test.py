@@ -50,7 +50,14 @@ class App:
         self.page = self.context.new_page()
         self.page.goto(self.url + "/")
         self.page.get_by_text("Upload Your File").wait_for(timeout=90_000)
+        # The sidebar is drawn last, so once it is there the whole page has rendered
+        self.page.locator("input[type=file]").wait_for(state="attached", timeout=60_000)
+        self.wait_for_sidebar()
         return self.page
+
+    def wait_for_sidebar(self):
+        """ArtBot's sidebar (not the words 'Ask ArtBot' in the intro paragraph)."""
+        self.page.locator('[data-testid="stSidebar"]').get_by_text("Ask ArtBot").first.wait_for(timeout=60_000)
 
     def upload(self, name):
         self.page.locator("input[type=file]").set_input_files(os.path.join(self.fixtures, name))
@@ -103,7 +110,7 @@ class App:
 
 def check_home(app):
     page = app.fresh()
-    expect(page.get_by_text("Ask ArtBot").first.is_visible(), "ArtBot sidebar is missing")
+    app.wait_for_sidebar()
     expect(page.locator("input[type=file]").count() == 1, "file uploader is missing")
     body = page.locator('[data-testid="stMain"]').inner_text()
     expect("Supported:" not in body, "the separate 'Supported:' box is back; the uploader already lists the file types")
@@ -284,6 +291,8 @@ def check_raster_in_pdf(app):
     app.upload("raster_in.pdf")
     page.get_by_text("Raster image detected inside PDF").wait_for(timeout=30_000)
     page.get_by_text("Usable Print Sizes").wait_for(timeout=30_000)
+    page.wait_for_timeout(2000)   # let the run finish: anything not redrawn is removed
+    app.wait_for_sidebar()        # the sidebar must also be drawn on pages that stop early
     app.no_errors()
 
 
@@ -569,7 +578,8 @@ def check_indesign_message(app):
     page = app.fresh()
     app.upload("layout.indd")
     page.get_by_text("InDesign Files Not Supported").wait_for(timeout=30_000)
-    expect(page.get_by_text("Ask ArtBot").first.is_visible(), "ArtBot sidebar is missing on the InDesign message")
+    page.wait_for_timeout(2000)   # let the run finish: anything not redrawn is removed
+    app.wait_for_sidebar()        # the sidebar must also be drawn on pages that stop early
     app.no_errors()
 
 
@@ -580,7 +590,8 @@ def check_gimp_message(app):
     body = page.locator('[data-testid="stMain"]').inner_text()
     expect("Export As" in body and "PNG" in body, "export instructions for GIMP files are missing")
     expect("Could not convert" not in body, "the old 'Could not convert file' error is shown for a GIMP file")
-    expect(page.get_by_text("Ask ArtBot").first.is_visible(), "ArtBot sidebar is missing on the GIMP message")
+    page.wait_for_timeout(2000)   # let the run finish: anything not redrawn is removed
+    app.wait_for_sidebar()        # the sidebar must also be drawn on pages that stop early
     app.no_errors()
 
 
