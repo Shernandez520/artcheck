@@ -345,6 +345,55 @@ def check_decoration_dtfx_fades(app):
     app.no_errors()
 
 
+def click_uploader_x(page):
+    """Click the X next to the uploaded file's name."""
+    page.locator('[data-testid="stFileUploaderDeleteBtn"] button').first.click()
+    page.wait_for_timeout(2500)
+
+
+def check_x_clears_raster(app):
+    page = app.fresh()
+    app.upload("photo_900x600.png")
+    page.get_by_text("Usable Print Sizes").wait_for(timeout=30_000)
+    page.wait_for_timeout(2000)
+    click_uploader_x(page)
+    body = page.locator("body").inner_text()
+    expect("Usable Print Sizes" not in body, "raster results are still shown after clicking the X")
+    expect("Decoration Method Check" not in body, "Decoration Method Check is still shown after clicking the X")
+    expect("I can see your file" not in body, "ArtBot still says it can see the file after clicking the X")
+    app.no_errors()
+
+
+def check_x_clears_vector(app):
+    page = app.fresh()
+    app.upload_vector("logo_red_3x2in.pdf")
+    app.generate()
+    click_uploader_x(page)
+    body = page.locator("body").inner_text()
+    expect("Preview generated successfully" not in body, "the preview is still shown after clicking the X")
+    expect("Color Analysis" not in body, "Color Analysis is still shown after clicking the X")
+    expect("I can see your file" not in body, "ArtBot still says it can see the file after clicking the X")
+    # and the app is ready for another file
+    app.upload_vector("logo_blue_3x2in.pdf")
+    app.generate()
+    app.no_errors()
+
+
+def check_results_survive_artbot(app):
+    """Asking ArtBot reruns the page; the file's results must stay on screen."""
+    page = app.fresh()
+    app.upload("photo_900x600.png")
+    page.get_by_text("Usable Print Sizes").wait_for(timeout=30_000)
+    page.wait_for_timeout(2000)
+    page.get_by_role("button", name="Difference between vector and raster?").click()
+    page.get_by_role("button", name="🔄 Clear conversation").wait_for(timeout=90_000)
+    page.wait_for_timeout(2000)
+    body = page.locator("body").inner_text()
+    expect("Usable Print Sizes" in body, "raster results disappeared after asking ArtBot a question")
+    expect("I can see your file" in body, "ArtBot lost the file after a question")
+    app.no_errors()
+
+
 def check_indesign_message(app):
     page = app.fresh()
     app.upload("layout.indd")
@@ -372,6 +421,9 @@ CHECKS = [
     ("Raster-in-PDF is detected", check_raster_in_pdf),
     ("Letter-size PDF renders within the 4000 px cap", check_large_pdf),
     ("White logo gets a dark Auto background", check_white_logo_auto_background),
+    ("The X on the uploader clears a raster file's results", check_x_clears_raster),
+    ("The X on the uploader clears a vector file's results", check_x_clears_vector),
+    ("Results stay on screen after asking ArtBot a question", check_results_survive_artbot),
     ("InDesign upload shows export instructions", check_indesign_message),
 ]
 
