@@ -234,6 +234,26 @@ def check_raster_png(app):
     page.get_by_text("Usable Print Sizes").wait_for(timeout=30_000)
     expect(page.get_by_text("Borderline Quality").count() > 0, "900x600 @72dpi image was not rated Borderline")
     expect(metrics(page).get("Dimensions") == "900 × 600 px", f"Dimensions show {metrics(page).get('Dimensions')}")
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    # The print-size table must agree with the Decoration Method Check: 200 dpi is the minimum
+    expect("DTG only" not in body and "150" not in body.split("Usable Print Sizes", 1)[1].split("Decoration Method Check", 1)[0],
+           "the print-size table still lists 150 dpi as usable")
+    expect('4.5" × 3.0"' in body, "the 200 dpi size (4.5\" × 3.0\") is missing from the print-size table")
+    expect("require CMYK" not in body, "the old 'most print methods require CMYK' warning is still shown")
+    app.no_errors()
+
+
+def check_color_count_wording(app):
+    page = app.fresh()
+    app.upload_vector("seven_colors.pdf")
+    app.generate()
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    expect("7 colors detected" in body, "the 7-color file did not trigger the color-count warning")
+    expect("separate screen" in body, "the color-count warning does not explain cost per screen")
+    expect("4-6 colors max" not in body, "the old '4-6 colors max' wording is still shown")
+    pick(page, "Decoration method", "Screen Print")
+    text = decoration_text(page)
+    expect("7 colors detected = 7 screens" in text, "the Decoration Method Check does not agree on the color count")
     app.no_errors()
 
 
@@ -417,7 +437,8 @@ CHECKS = [
     ("Decoration check: stitch file passes for a hat front", check_decoration_embroidery_stitch_file),
     ("Decoration check: DTFx flags art that fades to transparent", check_decoration_dtfx_fades),
     ("Embroidery file: stitch count and real size", check_embroidery),
-    ("Raster image: quality verdict", check_raster_png),
+    ("Raster image: quality verdict, print sizes at 300 and 200 dpi only", check_raster_png),
+    ("Color-count warning matches the Decoration Method Check (no fixed maximum)", check_color_count_wording),
     ("Raster-in-PDF is detected", check_raster_in_pdf),
     ("Letter-size PDF renders within the 4000 px cap", check_large_pdf),
     ("White logo gets a dark Auto background", check_white_logo_auto_background),

@@ -37,7 +37,7 @@ Background via `_apply_background(output_file, bg_type)`; both fitz (alpha=True)
 and GS (pngalpha) must render with transparency for backgrounds to work.
 
 ### RasterAnalyzer
-Reads DPI from Pillow metadata, computes usable print sizes at 300/200/150 DPI,
+Reads DPI from Pillow metadata, computes usable print sizes at 300/200 DPI,
 verdicts (Production Ready / Marginal / Not Suitable), flags 72 DPI as likely
 web graphics, recommends what to request from the customer.
 
@@ -145,12 +145,20 @@ Decoration Method Check. `tests/test_decoration_rules.py` unit-tests the rules. 
   (`SKIP_EPS=1` without Ghostscript). Not covered: .cdr, .xcf, live ArtBot replies.
 
 ## Decoration Method Quick Reference
+Matches `decoration_rules.py` (Dubow Textile's published guidelines, used as a
+general guide). Keep this table, the ArtBot system prompt and the raster
+print-size table in step with that file — the app must not give conflicting numbers.
+
 | Method | File Needs | Key Limits |
 |--------|-----------|------------|
-| Screen Print | Vector, spot colors | 4-6 colors max |
-| Embroidery | .dst/.pes or digitizing | Max ~12K stitches left chest |
-| DTG | Raster OK, 300 DPI | Best on cotton/light |
-| Laser Etch | Vector only | Single color, line art |
-| Heat Transfer | Vector, solid colors | Min detail 0.125" |
-| Dye Sub | Full color RGB | Polyester only, 300 DPI+ |
-| Pad Print | Vector, spot colors | 1-4 colors, small areas |
+| Screen Print | Vector, PMS spot colors | Max 14.5" × 18"; 24-piece minimum; no published color maximum (each color = a screen); gradients print as halftones |
+| Embroidery | Any legible art (digitized in-house) or .dst | Max 10" × 10", hats 5" × 2.25"; text at least 3/16" tall; no gradients; no published stitch limit |
+| DTFx | Vector or high-res PNG | Max 14" × 18"; detail at least 1 mm (4 pt); no fades or transparency |
+| Digital Print (DTG) | Vector, or raster at 200 dpi minimum at print size (300 recommended), RGB preferred | Max 15" × 19"; best on 100% cotton |
+| Dye Sublimation | Full color | Max 15" × 19"; white 100% polyester; no white ink |
+| Laser Etch | Vector preferred, one color | Max 22" × 11"; tone-on-tone; not for cotton, white, black, heathered or patterned garments |
+| Stickers | Full color; custom cut line as PDF | Max 9.8" × 14"; no transparency; 1/8" cut offset |
+| Buttons / Magnets | Full color | Max 3" × 3"; type at least 6 pt |
+| Hard Goods | Art on the decorator's product template | Per product; decorator's inventory only |
+
+Print resolution everywhere in the app: 200 dpi minimum, 300 dpi recommended.

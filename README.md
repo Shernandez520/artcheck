@@ -34,7 +34,7 @@ ArtCheck parses color data from the **file's internal structure before rasteriza
 - RGB flagged with a warning, because RGB is a red flag in promo production
 
 ### Raster Suitability Check
-PNG/JPG uploads get a DPI analysis with usable print sizes at 300/200/150 DPI, a plain-English verdict (Production Ready / Marginal / Not Suitable), and exactly what to ask the customer for instead.
+PNG/JPG uploads get a DPI analysis with usable print sizes at 300 and 200 DPI, a plain-English verdict (Production Ready / Marginal / Not Suitable), and exactly what to ask the customer for instead.
 
 ### ArtBot — AI Production Assistant
 A sidebar assistant with a senior-production-artist persona (powered by Claude). It sees your uploaded file's analysis and answers questions like "what does 'fonts not outlined' mean?" — including word-for-word scripts reps can send to customers.
