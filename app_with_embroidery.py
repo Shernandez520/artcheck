@@ -1237,6 +1237,7 @@ class ColorExtractor:
                     doc3.close()
 
                     cmyk_found = {}
+                    painted = self._painted_fill_colors(stream_text)
 
                     # Illustrator uses 'scn' operator with named colorspace (not 'k')
                     # e.g. /CS0 cs 0 0 0 0.2 scn  or  0 0 0 0.4 scn
@@ -1258,7 +1259,7 @@ class ColorExtractor:
                     scn_cmyk_hits = re.findall(r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+scn', stream_text)
                     for match in scn_cmyk_hits:
                         c, m, y, k = [float(x) for x in match]
-                        if self._is_registration_color(c, m, y, k): continue
+                        if self._skip_stream_color(c, m, y, k, painted): continue
                         if c == 0 and m == 0 and y == 0:
                             k_pct = round(k * 100)
                             label = f"K:{k_pct}% (Black {k_pct}%)"
@@ -1273,7 +1274,7 @@ class ColorExtractor:
                     k_hits = re.findall(r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+k', stream_text)
                     for match in k_hits:
                         c, m, y, k = [float(x) for x in match]
-                        if self._is_registration_color(c, m, y, k): continue
+                        if self._skip_stream_color(c, m, y, k, painted): continue
                         if c == 0 and m == 0 and y == 0:
                             k_pct = round(k * 100)
                             label = f"K:{k_pct}% (Black {k_pct}%)"
@@ -1350,15 +1351,75 @@ class ColorExtractor:
             results['warnings'].append(f"Color extraction error: {str(e)}")
             return results
 
-    def _is_registration_color(self, c, m, y, k):
-        """Filter out pure primaries and registration artifacts"""
-        vals = (round(c,1), round(m,1), round(y,1), round(k,1))
-        artifacts = [
-            (1,0,0,0), (0,1,0,0), (0,0,1,0), (0,0,0,1),  # pure primaries
-            (1,1,1,1),  # registration black
-            (0,0,0,0),  # paper white
-        ]
-        return vals in artifacts
+    def _painted_fill_colors(self, stream_text):
+        """CMYK fill colors that are actually used to paint something on the page.
+
+        Walks the content stream in order, tracking the current fill color and the
+        q/Q graphics-state stack, and records the color each time a fill or
+        text-showing operator runs. A color that is only *set* (for example an
+        application's default black at the top of the stream) is not recorded.
+        Returns a set of (c, m, y, k) tuples rounded to 3 places, or None if the
+        stream could not be walked.
+        """
+        try:
+            import re
+            text = re.sub(r'\bBI\b.*?\bEI\b', ' ', stream_text, flags=re.DOTALL)   # inline images
+            text = re.sub(r'\((?:\\.|[^\\()])*\)', ' ', text)                    # (string) literals
+            text = re.sub(r'<[0-9A-Fa-f\s]*>', ' ', text)                          # <hex> strings
+            tokens = re.findall(r"/[^\s/\[\]()<>{}%]*|[-+]?(?:\d+\.?\d*|\.\d+)|[A-Za-z'\"]+\*?|[\[\]]", text)
+
+            painted = set()
+            fill = None
+            stack = []
+            nums = []
+            for tok in tokens:
+                first = tok[0]
+                if first.isdigit() or first in '+-.':
+                    try:
+                        nums.append(float(tok))
+                    except ValueError:
+                        pass
+                    continue
+                if first in '/[]':
+                    continue
+                # operator
+                if tok == 'k' and len(nums) >= 4:
+                    fill = tuple(round(v, 3) for v in nums[-4:])
+                elif tok in ('scn', 'sc') and len(nums) == 4:
+                    fill = tuple(round(v, 3) for v in nums[-4:])
+                elif tok in ('scn', 'sc', 'rg', 'cs'):
+                    fill = None            # not a 4-value CMYK color
+                elif tok == 'g' and nums:
+                    fill = (0.0, 0.0, 0.0, round(1 - nums[-1], 3))
+                elif tok == 'q':
+                    stack.append(fill)
+                elif tok == 'Q':
+                    fill = stack.pop() if stack else fill
+                elif tok in ('f', 'F', 'f*', 'B', 'B*', 'b', 'b*', 'Tj', 'TJ', "'", '"'):
+                    if fill is not None:
+                        painted.add(fill)
+                nums = []
+            return painted
+        except Exception:
+            return None
+
+    def _skip_stream_color(self, c, m, y, k, painted):
+        """True for stream colors that should not be listed.
+
+        Registration black (all four inks at 100%) and paper white are never
+        listed. A pure 100% ink (C, M, Y or K alone) is listed only when it is
+        really painted on the page; `painted` comes from _painted_fill_colors().
+        If the stream could not be walked (painted is None) pure inks are
+        skipped, which is how every pure ink was treated before.
+        """
+        vals = (round(c, 1), round(m, 1), round(y, 1), round(k, 1))
+        if vals in ((1, 1, 1, 1), (0, 0, 0, 0)):
+            return True
+        if vals in ((1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1)):
+            if painted is None:
+                return True
+            return (round(c, 3), round(m, 3), round(y, 3), round(k, 3)) not in painted
+        return False
 
     def _extract_from_eps(self, input_file, results):
         """Extract colors from EPS using GS->PDF->fitz pipeline for binary EPS support"""
@@ -1383,6 +1444,7 @@ class ColorExtractor:
 
                 fills = {}
                 spot_colors = {}
+                painted = self._painted_fill_colors(stream)
 
                 # Spot colors from original EPS text
                 try:
@@ -1406,7 +1468,7 @@ class ColorExtractor:
                     ]:
                         for match in re.findall(pat, stream):
                             c, m, y, k = [float(x) for x in match]
-                            if self._is_registration_color(c, m, y, k): continue
+                            if self._skip_stream_color(c, m, y, k, painted): continue
                             if c == 0 and m == 0 and y == 0:
                                 k_pct = round(k * 100)
                                 if k_pct == 0: continue

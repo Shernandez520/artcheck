@@ -175,6 +175,9 @@ def check_eps(app):
     expect(m.get("Size (inches)") == '3.0" x 2.0"', f"expected 3.0\" x 2.0\", page shows {m.get('Size (inches)')}")
     expect(page.get_by_text("Color Analysis").count() > 0, "Color Analysis section is missing")
     expect(page.get_by_text("No live text found").count() > 0, "EPS without text did not pass the Font Check")
+    colors = page.locator('[data-testid="stMain"]').inner_text().split("Color Analysis", 1)[1]
+    expect("K:100%" in colors, "the EPS has a pure black shape, but black is not listed in Color Analysis")
+    expect("C:0% M:100% Y:100% K:0%" in colors, "the EPS has a red shape, but red is not listed in Color Analysis")
     app.no_errors()
 
 
@@ -240,6 +243,22 @@ def check_raster_png(app):
            "the print-size table still lists 150 dpi as usable")
     expect('4.5" × 3.0"' in body, "the 200 dpi size (4.5\" × 3.0\") is missing from the print-size table")
     expect("require CMYK" not in body, "the old 'most print methods require CMYK' warning is still shown")
+    app.no_errors()
+
+
+def check_pure_ink_colors(app):
+    page = app.fresh()
+    app.upload_vector("pure_inks.pdf")
+    app.generate()
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    colors = body.split("Color Analysis", 1)[1]
+    expect("K:100%" in colors, "pure black (K 100%) is painted in the file but not listed")
+    expect("C:0% M:0% Y:100% K:0%" in colors, "pure yellow is painted in the file but not listed")
+    expect("C:0% M:100% Y:100% K:0%" in colors, "red is not listed")
+    expect("C:100% M:0% Y:0% K:0%" not in colors, "cyan is listed although it is never painted")
+    expect("C:0% M:100% Y:0% K:0%" not in colors, "magenta is listed although it is never painted")
+    pick(page, "Decoration method", "Screen Print")
+    expect("3 colors detected = 3 screens" in decoration_text(page), "screen count should be 3 (black, yellow, red)")
     app.no_errors()
 
 
@@ -428,7 +447,7 @@ CHECKS = [
     ("SVG without units: preview, size shown as Scalable", check_svg),
     ("SVG with real-world units: size in inches", check_svg_with_units),
     ("Multi-page PDF shows a page-1-only notice", check_multi_page_pdf),
-    ("EPS preview and size (Ghostscript)", check_eps),
+    ("EPS preview, size and colors including pure black (Ghostscript)", check_eps),
     ("Font Check flags live text in a PDF, with embedded / not embedded", check_fonts_pdf),
     ("Font Check flags live text in an SVG", check_fonts_svg),
     ("Font Check flags live text in an EPS (Ghostscript)", check_fonts_eps),
@@ -438,6 +457,7 @@ CHECKS = [
     ("Decoration check: DTFx flags art that fades to transparent", check_decoration_dtfx_fades),
     ("Embroidery file: stitch count and real size", check_embroidery),
     ("Raster image: quality verdict, print sizes at 300 and 200 dpi only", check_raster_png),
+    ("Pure black and pure yellow are listed when painted; unused colors are not", check_pure_ink_colors),
     ("Color-count warning matches the Decoration Method Check (no fixed maximum)", check_color_count_wording),
     ("Raster-in-PDF is detected", check_raster_in_pdf),
     ("Letter-size PDF renders within the 4000 px cap", check_large_pdf),

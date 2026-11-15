@@ -69,6 +69,22 @@ def main(out_dir):
         c.rect(10 + i * 28, 20, 24, 104, fill=1, stroke=0)
     c.save()
 
+    # Pure 100% inks: black, yellow and red (M+Y) are painted and must be listed.
+    # Cyan and magenta are only *set*, never painted, and must NOT be listed.
+    c = canvas.Canvas(str(out / "pure_inks.pdf"), pagesize=(216, 144))
+    c.setFillColor(CMYKColor(1, 0, 0, 0))            # set, never used
+    c.setFillColor(CMYKColor(0, 0, 0, 1))
+    c.rect(10, 20, 60, 104, fill=1, stroke=0)        # pure black
+    c.saveState()
+    c.setFillColor(CMYKColor(0, 1, 0, 0))            # set inside a saved state, never used
+    c.restoreState()
+    c.rect(78, 20, 10, 104, fill=1, stroke=0)        # still black after restore
+    c.setFillColor(CMYKColor(0, 0, 1, 0))
+    c.rect(96, 20, 50, 104, fill=1, stroke=0)        # pure yellow
+    c.setFillColor(CMYKColor(0, 1, 1, 0))
+    c.rect(154, 20, 50, 104, fill=1, stroke=0)       # red
+    c.save()
+
     # Two-page PDF (page 1 is 3" x 2")
     c = canvas.Canvas(str(out / "two_pages.pdf"), pagesize=(216, 144))
     for color in (RED, BLUE):
