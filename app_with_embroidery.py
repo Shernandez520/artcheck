@@ -74,6 +74,11 @@ def _render_mockup_builder_button(art_bytes, filename_stem):
         return
     _store = _get_mockup_handoff_store()
     _existing_token = st.session_state.get('mockup_handoff_token')
+    # Reuse the token only if it still holds THIS artwork. Otherwise a token
+    # minted for a previous file would open the Mockup Builder with the old art.
+    if _existing_token and _existing_token in _store and _store[_existing_token][0] != art_bytes:
+        _store.pop(_existing_token, None)
+        _existing_token = None
     if _existing_token and _existing_token in _store:
         _b, _n, _ = _store[_existing_token]
         _store[_existing_token] = (_b, _n, _time.time())
@@ -512,6 +517,21 @@ class PreviewGenerator:
         except Exception:
             return False, 0
 
+    def _pdf_page_size_inches(self, input_file):
+        """Real document size of page 1 in inches (PDF points / 72).
+        The preview is rendered at a variable scale, so pixels / 300 is NOT
+        the physical size for PDF/AI files. Returns (w_in, h_in) or None."""
+        try:
+            import fitz
+            doc = fitz.open(input_file)
+            rect = doc[0].rect
+            doc.close()
+            if rect.width > 0 and rect.height > 0:
+                return round(rect.width / 72, 2), round(rect.height / 72, 2)
+        except Exception:
+            pass
+        return None
+
     def _convert_svg_with_cairosvg(self, input_file, output_file):
         """Convert SVG to PNG using CairoSVG"""
         try:
@@ -695,7 +715,10 @@ class PreviewGenerator:
                     'height': img.height,
                     'size_kb': round(os.path.getsize(output_file) / 1024, 2),
                     'file_type': 'embroidery',
-                    'embroidery_info': result
+                    'embroidery_info': result,
+                    # Real stitched size, not the size of the preview canvas
+                    'width_in': round(result['width_mm'] / 25.4, 2),
+                    'height_in': round(result['height_mm'] / 25.4, 2),
                 }
             else:
                 st.error(f"Embroidery conversion failed: {result}")
@@ -740,13 +763,18 @@ class PreviewGenerator:
         if success and os.path.exists(output_file):
             self._apply_background(output_file, bg_type)
             img = Image.open(output_file)
-            return {
+            preview = {
                 'image': output_file,
                 'width': img.width,
                 'height': img.height,
                 'size_kb': round(os.path.getsize(output_file) / 1024, 2),
                 'file_type': file_type_label
             }
+            if ext in ('.pdf', '.ai'):
+                size_in = self._pdf_page_size_inches(input_file)
+                if size_in:
+                    preview['width_in'], preview['height_in'] = size_in
+            return preview
 
         st.error("Could not convert file. For CorelDRAW (.cdr) files, please export as PDF or SVG from CorelDRAW and re-upload. For other formats, try exporting as PDF or SVG from your design application.")
         return None
@@ -1541,6 +1569,8 @@ def build_artbot_system_prompt():
 
     if ctx.get('width') and ctx.get('height'):
         lines.append(f"Dimensions: {ctx['width']} × {ctx['height']} px")
+    if ctx.get('width_in') and ctx.get('height_in'):
+        lines.append(f"Actual document size: {ctx['width_in']}\" × {ctx['height_in']}\" (the px dimensions above are the preview render, not the print size)")
     if ctx.get('size_kb'):
         lines.append(f"File size: {ctx['size_kb']} KB")
 
@@ -1764,6 +1794,13 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file:
+    # Drop raster-in-PDF caches that belong to any previously uploaded file
+    _current_suffix = f"_{uploaded_file.name}_{uploaded_file.size}"
+    for _k in list(st.session_state.keys()):
+        if (_k.startswith('raster_pdf_bytes_') or _k.startswith('raster_pdf_analysis_')) \
+                and not _k.endswith(_current_suffix):
+            del st.session_state[_k]
+
     # Clear stored preview if a different file is uploaded
     if st.session_state.get('preview_filename') and \
             st.session_state.get('preview_filename') != uploaded_file.name:
@@ -1771,6 +1808,7 @@ if uploaded_file:
         st.session_state.pop('preview_result', None)
         st.session_state.pop('preview_color_data', None)
         st.session_state.pop('preview_filename', None)
+        st.session_state.pop('preview_download_bytes', None)
         st.session_state.pop('artbot_file_context', None)
         st.session_state.pop('_raster_context_synced', None)
         st.session_state.pop('_raster_display_bytes', None)
@@ -1808,6 +1846,9 @@ if uploaded_file:
             st.session_state.pop('_raster_analysis', None)
             st.session_state.pop('_raster_filename', None)
             st.session_state.pop('_raster_context_synced', None)
+            for _k in list(st.session_state.keys()):
+                if _k.startswith('raster_pdf_bytes_') or _k.startswith('raster_pdf_analysis_'):
+                    del st.session_state[_k]
             st.rerun()
 
     # Check for raster-in-PDF before normal vector flow
@@ -2020,6 +2061,15 @@ if uploaded_file:
                 with open(result["image"], "rb") as _f:
                     _image_bytes = _f.read()
 
+            # The preview PNGs are now in memory — remove them from /tmp so
+            # they don't pile up on the server for the life of the container.
+            for _r in (result, _dl_result):
+                try:
+                    if _r and _r.get('image') and os.path.exists(_r['image']):
+                        os.unlink(_r['image'])
+                except Exception:
+                    pass
+
         # Store everything in session state OUTSIDE the spinner
         if result and _image_bytes:
             # Downsize image for session state storage — max 1200px on longest side
@@ -2046,6 +2096,8 @@ if uploaded_file:
                 'width': result.get('width'),
                 'height': result.get('height'),
                 'size_kb': result.get('size_kb'),
+                'width_in': result.get('width_in'),
+                'height_in': result.get('height_in'),
                 'color_data': color_data,
                 'embroidery_info': result.get('embroidery_info'),
             }
@@ -2145,8 +2197,12 @@ function reset(){scale=fitScale;tx=0;ty=0;apply();}
     with col2:
         st.markdown("### Preview Info")
         if result.get('width'):
-            w_in = round(result['width'] / 300, 2)
-            h_in = round(result['height'] / 300, 2)
+            if result.get('width_in') and result.get('height_in'):
+                # Real document size (PDF/AI page, embroidery stitch area)
+                w_in, h_in = result['width_in'], result['height_in']
+            else:
+                w_in = round(result['width'] / 300, 2)
+                h_in = round(result['height'] / 300, 2)
             st.metric("Dimensions (px)", f"{result['width']} × {result['height']}")
             st.metric("Size (inches)", f'{w_in}" x {h_in}"')
         if result.get('size_kb'):
