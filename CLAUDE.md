@@ -57,6 +57,14 @@ spot names from original EPS text (printable-ASCII filter for binary garbage).
 **Key operators:** Illustrator AI/PDF uses `scn`; GS-converted EPS uses `k`;
 plain PostScript uses `setcmykcolor`/`setgray`.
 
+**Pure 100% inks (K100 black, pure C/M/Y):** listed only when actually painted.
+`_painted_fill_colors()` walks the content stream (fill color + q/Q stack) and
+records the color at each fill/text operator, so colors that are only *set*
+(application defaults at the top of the stream) are not listed.
+`_skip_stream_color()` always drops registration black (100/100/100/100) and
+paper white. Do not go back to dropping every pure ink — a plain black logo
+then shows no black and the screen count is one short.
+
 ### FontChecker — live text / fonts not outlined
 Runs on .pdf/.ai/.eps/.svg after preview generation; result stored in
 `result['font_check']` (`live_text`, `fonts[{name, embedded}]`, `sample`) and
