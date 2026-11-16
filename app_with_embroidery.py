@@ -1,8 +1,7 @@
 """
-ArtCheck - Enhanced with Embroidery File Support + Ask ArtBot
-Handles vector files AND embroidery files (.dst, .pes, .exp, etc.)
-NOW WITH: AI-powered production artist assistant
-CLOUD-OPTIMIZED VERSION - Uses CairoSVG, pdf2image, reportlab instead of Inkscape/ImageMagick
+ArtCheck - art file screening for promotional products.
+Previews, color analysis, font check, decoration method check, vector PDF export
+and the ArtBot assistant. See CLAUDE.md for how the pieces fit together.
 """
 
 # Patch Tornado to send server-side WebSocket pings — prevents Railway proxy
@@ -233,7 +232,6 @@ def compose_background(img, bg_type):
 
 def compose_preview_bytes(alpha_png_bytes, bg_type):
     """PNG bytes of the stored transparent preview on the chosen background."""
-    import io
     out = io.BytesIO()
     compose_background(Image.open(io.BytesIO(alpha_png_bytes)), bg_type).save(out, format='PNG')
     return out.getvalue()
@@ -248,7 +246,7 @@ _CDR_CONVERSIONS = {}
 def convert_cdr(input_file):
     """CorelDRAW (.cdr) -> vector PDF, without rasterizing.
 
-    cdr2xhtml (libcdr) -> clean SVG of page 1 (cdr_tools) -> CairoSVG PDF surface.
+    cdr2xhtml (libcdr) -> clean SVG of page 1 (cdr_tools) -> PDF (MuPDF, CairoSVG as fallback).
     Returns {'pdf': bytes, 'pages': page count in the .cdr, 'size_in': (w, h)} or None.
     """
     if input_file in _CDR_CONVERSIONS:
@@ -384,11 +382,14 @@ if st.query_params.get("mockup"):
         if _token and _token in _store:
             _art_bytes, _art_name, _ = _store.pop(_token)
             _b64_data = _b64.b64encode(_art_bytes).decode("ascii")
-            _safe_name = _art_name.replace('"', '').replace("'", "")
+            import json as _json
+            # json.dumps quotes and escapes the name; "<" is escaped as well so a
+            # file name can never close the script tag
+            _safe_name = _json.dumps(str(_art_name)).replace("<", "\\u003c")
             _inject = (
                 f'<script>'
                 f'window.__preloadedArtwork = "data:image/png;base64,{_b64_data}";'
-                f'window.__preloadedArtworkName = "{_safe_name}";'
+                f'window.__preloadedArtworkName = {_safe_name};'
                 f'</script>'
             )
             _mockup_html = _mockup_html.replace("</head>", _inject + "</head>", 1)
@@ -626,8 +627,8 @@ class EmbroideryConverter:
             # Read embroidery file
             pattern = self.pyembroidery.read(str(input_file))
             
-            # Create visualization
-            img = Image.new('RGB', (width, height), 'white')
+            # Transparent canvas, so the background buttons work for stitch files too
+            img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
             draw = ImageDraw.Draw(img)
             
             # Get pattern bounds
@@ -654,43 +655,46 @@ class EmbroideryConverter:
             offset_x = margin + (width - 2 * margin - pattern_width * scale) / 2
             offset_y = margin + (height - 2 * margin - pattern_height * scale) / 2
             
-            # Draw stitches
-            prev_x = prev_y = None
-            current_color = (0, 0, 0)  # Default black
-            
+            # pyembroidery commands are VALUES in the low byte (STITCH 0, JUMP 1, TRIM 2,
+            # STOP 3, END 4, COLOR_CHANGE 5), not bit flags. Testing them with "&" made
+            # every jump count as a thread change.
+            pe = self.pyembroidery
+            mask = getattr(pe, 'COMMAND_MASK', 0xFF)
+            thread_colors, unique_color_count = self.get_thread_colors(pattern)
+
+            def thread_rgba(index):
+                # Files without color data (most .dst) are drawn black
+                if 0 <= index < len(thread_colors):
+                    return thread_colors[index]['rgb'] + (255,)
+                return (0, 0, 0, 255)
+
+            prev = None
+            color_index = 0
+            current_color = thread_rgba(0)
+            stitch_count = 0
+            thread_changes = 0
             for stitch in pattern.stitches:
-                x, y = stitch[0], stitch[1]
-                flags = stitch[2] if len(stitch) > 2 else 0
-                
-                # Scale and translate coordinates
-                screen_x = offset_x + (x - min_x) * scale
-                screen_y = offset_y + (y - min_y) * scale
-                
-                # Handle color changes
-                if flags & self.pyembroidery.TRIM or flags & self.pyembroidery.COLOR_CHANGE:
-                    prev_x = prev_y = None
-                
-                # Draw stitch line
-                if prev_x is not None and not (flags & self.pyembroidery.JUMP):
-                    draw.line(
-                        [(prev_x, prev_y), (screen_x, screen_y)],
-                        fill=current_color,
-                        width=2
-                    )
-                
-                prev_x, prev_y = screen_x, screen_y
+                command = (stitch[2] if len(stitch) > 2 else pe.STITCH) & mask
+                point = (offset_x + (stitch[0] - min_x) * scale, offset_y + (stitch[1] - min_y) * scale)
+                if command == pe.STITCH:
+                    stitch_count += 1
+                    if prev is not None:
+                        draw.line([prev, point], fill=current_color, width=2)
+                    prev = point
+                elif command == pe.COLOR_CHANGE:
+                    thread_changes += 1
+                    color_index += 1
+                    current_color = thread_rgba(color_index)
+                    prev = None
+                elif command == pe.JUMP:
+                    prev = point          # the needle moves without sewing
+                else:                     # TRIM, STOP, END and anything else: thread is cut
+                    prev = None
             
             # Save image
             img.save(output_file, 'PNG')
-            
-            # Get pattern info — count only real stitches, not trims/jumps
-            stitch_count = sum(
-                1 for s in pattern.stitches
-                if len(s) > 2 and s[2] == self.pyembroidery.STITCH
-            )
-            thread_changes = sum(1 for s in pattern.stitches if len(s) > 2 and (s[2] & self.pyembroidery.COLOR_CHANGE))
-            
-            thread_colors, unique_color_count = self.get_thread_colors(pattern)
+
+
             return True, {
                 'stitch_count': stitch_count,
                 'thread_changes': thread_changes,
@@ -707,10 +711,7 @@ class EmbroideryConverter:
 class PreviewGenerator:
     """Handles conversion of vector files to PNG previews - CLOUD OPTIMIZED"""
     
-    SUPPORTED_FORMATS = ['.ai', '.eps', '.pdf', '.svg', '.cdr']
-    DEFAULT_DPI = 300
     PREVIEW_MAX_WIDTH = 1200
-    PREVIEW_MAX_HEIGHT = 1200
     # Longest side, in pixels, of a fitz render. Without a cap a letter-size
     # page renders at 6120x7920 (~700 MB peak) and a poster cannot render at all.
     # 4000 px keeps pages up to ~13" at 300+ DPI; small artwork is unaffected.
@@ -720,11 +721,6 @@ class PreviewGenerator:
         self.embroidery = EmbroideryConverter()
         # Heavy libraries (cairosvg, fitz, pdf2image) are imported lazily
         # inside each conversion method to minimize memory at idle
-    
-    def is_supported(self, filename):
-        """Check if file format is supported"""
-        ext = Path(filename).suffix.lower()
-        return ext in self.SUPPORTED_FORMATS or self.embroidery.is_embroidery_file(filename)
     
     def _svg_has_embedded_raster(self, input_file):
         """Detect if SVG is just a wrapper around an embedded raster image"""
@@ -750,7 +746,7 @@ class PreviewGenerator:
             raster_image_count = 0
             for page in doc:
                 # Count vector paths
-                paths = page.get_drawings()
+                paths = page.get_cdrawings()     # same list as get_drawings(), half the time
                 vector_path_count += len(paths)
                 # Count raster images
                 images = page.get_images()
@@ -830,8 +826,7 @@ class PreviewGenerator:
                 output_width=self.PREVIEW_MAX_WIDTH
             )
             return os.path.exists(output_file) and os.path.getsize(output_file) > 0
-        except Exception as e:
-            st.warning(f"CairoSVG conversion failed: {str(e)}")
+        except Exception:
             return False
 
     def _eps_render_dpi(self, input_file):
@@ -913,8 +908,7 @@ class PreviewGenerator:
             pix.save(output_file)
             doc.close()
             return os.path.exists(output_file) and os.path.getsize(output_file) > 0
-        except Exception as e:
-            st.warning(f"PyMuPDF conversion failed: {str(e)}")
+        except Exception:
             return False
 
     def _apply_background(self, output_file, bg_type):
@@ -927,9 +921,8 @@ class PreviewGenerator:
     def _convert_cdr(self, input_file, output_file):
         """Convert CorelDRAW .cdr to PNG.
 
-        Preferred: convert_cdr() makes a vector PDF of page 1, rendered here with
-        fitz (correct page size, transparency, render cap). If that fails, fall
-        back to the older cdr2xhtml -> CairoSVG / fitz attempt below.
+        convert_cdr() makes a vector PDF of page 1, rendered here with fitz
+        (correct page size, transparency, render cap).
         """
         converted = convert_cdr(input_file)
         if converted:
@@ -945,41 +938,7 @@ class PreviewGenerator:
             finally:
                 if pdf_tmp_path and os.path.exists(pdf_tmp_path):
                     os.unlink(pdf_tmp_path)
-        try:
-            # cdr2xhtml outputs SVG to stdout
-            result = subprocess.run(
-                ["cdr2xhtml", input_file],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            if result.returncode != 0 or not result.stdout.strip():
-                st.warning("cdr2xhtml could not parse this CorelDRAW file.")
-                return False
-
-            # Write SVG to temp file, then convert with CairoSVG
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.svg', mode='w') as svg_tmp:
-                svg_tmp.write(result.stdout)
-                svg_tmp_path = svg_tmp.name
-
-            try:
-                success = self._convert_svg_with_cairosvg(svg_tmp_path, output_file)
-                if not success:
-                    success = self._convert_with_fitz(svg_tmp_path, output_file)
-                return success
-            finally:
-                if os.path.exists(svg_tmp_path):
-                    os.unlink(svg_tmp_path)
-
-        except FileNotFoundError:
-            st.warning("cdr2xhtml not found. Add `libcdr-tools` to packages.txt.")
-            return False
-        except subprocess.TimeoutExpired:
-            st.warning("CorelDRAW conversion timed out.")
-            return False
-        except Exception as e:
-            st.warning(f"CDR conversion failed: {str(e)}")
-            return False
+        return False
 
     def _pdf_image_count(self, input_file):
         """How many raster images sit on page 1 of a PDF / PDF-based .ai."""
@@ -1001,11 +960,24 @@ class PreviewGenerator:
         elif ext == '.ai':
             return mixed_label('Vector (AI)', self._pdf_image_count(input_file))
         elif ext == '.pdf':
-            is_raster, img_count = self._pdf_has_only_raster(input_file)
+            is_raster, _ = self._pdf_has_only_raster(input_file)
             if is_raster:
                 return 'PDF (embedded raster)'
             return mixed_label('Vector (PDF)', self._pdf_image_count(input_file))
         return 'Vector'
+
+    @staticmethod
+    def _new_png_path():
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
+            return tmp.name
+
+    @staticmethod
+    def _discard(path):
+        try:
+            if path and os.path.exists(path):
+                os.unlink(path)
+        except Exception:
+            pass
 
     def generate_preview(self, input_file, bg_type='auto'):
         """Generate preview from vector or embroidery file"""
@@ -1013,7 +985,7 @@ class PreviewGenerator:
         
         # Handle embroidery files
         if self.embroidery.is_embroidery_file(input_file):
-            output_file = tempfile.mktemp(suffix='.png')
+            output_file = self._new_png_path()
             success, result = self.embroidery.convert_to_png(input_file, output_file)
             
             if success:
@@ -1032,10 +1004,11 @@ class PreviewGenerator:
                     'height_in': round(result['height_mm'] / 25.4, 2),
                 }
             else:
+                self._discard(output_file)
                 st.error(f"Embroidery conversion failed: {result}")
                 return None
         
-        output_file = tempfile.mktemp(suffix='.png')
+        output_file = self._new_png_path()
         success = False
         file_type_label = self._detect_file_type_label(input_file, ext)
 
@@ -1055,8 +1028,8 @@ class PreviewGenerator:
                     if pages:
                         pages[0].save(output_file, 'PNG')
                         success = os.path.exists(output_file) and os.path.getsize(output_file) > 0
-                except Exception as e:
-                    st.warning(f"pdf2image fallback failed: {str(e)}")
+                except Exception:
+                    pass
 
         elif ext == '.svg':
             embedded_raster = self._svg_has_embedded_raster(input_file)
@@ -1071,7 +1044,7 @@ class PreviewGenerator:
         elif ext == '.cdr':
             success = self._convert_cdr(input_file, output_file)
 
-        if success and os.path.exists(output_file):
+        if success and os.path.exists(output_file) and os.path.getsize(output_file) > 0:
             if bg_type != 'transparent_alpha':   # nothing to add: skip a full decode + re-encode
                 self._apply_background(output_file, bg_type)
             img = Image.open(output_file)
@@ -1111,14 +1084,21 @@ class PreviewGenerator:
                     preview['size_note'] = 'unknown'
             return preview
 
-        st.error("Could not convert file. For CorelDRAW (.cdr) files, please export as PDF or SVG from CorelDRAW and re-upload. For other formats, try exporting as PDF or SVG from your design application.")
+        self._discard(output_file)
+        # One plain message. (Each renderer used to add its own technical warning,
+        # with temp file paths in it.)
+        if ext == '.cdr':
+            st.error("Could not convert file. ArtCheck could not read this CorelDRAW file. "
+                     "Ask for a PDF exported from CorelDRAW and upload that.")
+        elif ext == '.ai':
+            st.error("Could not convert file. This .ai file may be damaged, or saved without "
+                     "“Create PDF Compatible File”. Ask for it to be re-saved from Illustrator with that "
+                     "option checked, or exported as PDF.")
+        else:
+            st.error("Could not convert file. It may be damaged or saved in a way ArtCheck can't read. "
+                     "Ask for a fresh export as PDF and upload that.")
         return None
 
-
-
-# ============================================================================
-# COLOR EXTRACTOR - Reads vector color data from source files
-# ============================================================================
 
 
 # ============================================================================
@@ -1317,7 +1297,6 @@ class ColorExtractor:
             'spot_colors': [],
             'gradients': [],
             'warnings': [],
-            'color_space': None
         }
 
         if ext in ['.pdf', '.ai']:
@@ -1355,13 +1334,6 @@ class ColorExtractor:
             strokes = {}
             spot_colors = {}
             gradients = []
-
-            # Get color space info
-            try:
-                page.get_text("dict")
-                results['color_space'] = 'CMYK/Mixed'
-            except:
-                pass
 
             # Extract via drawings (paths with fill/stroke info)
             # Detect document color mode
@@ -1595,11 +1567,20 @@ class ColorExtractor:
                 fills = {k: v for k, v in fills.items() if v.get('space') != 'RGB'}
                 strokes = {k: v for k, v in strokes.items() if v.get('space') != 'RGB'}
 
+            # Gradients and shading show up as hundreds of one-off colors: list a
+            # dozen, say how many there are, and skip the "N colors = N screens" warning
+            many_fills = len(fills) if len(fills) > 24 else 0
+            if many_fills:
+                fills = dict(list(fills.items())[:12])
+
             results['fills'] = list(fills.values())
-            results['strokes'] = list(strokes.values())
             results['strokes'] = list(strokes.values())
             results['spot_colors'] = list(spot_colors.values())
             results['gradients'] = gradients
+            if many_fills:
+                results['warnings'].append(
+                    f"🎨 {many_fills} different fill colors found (gradients or shading): this is full-color "
+                    "artwork. The first 12 are listed.")
 
             # Generate warnings
             if gradients:
@@ -1610,7 +1591,7 @@ class ColorExtractor:
                 results['warnings'].append("⚠️ Hairline stroke detected — may not reproduce in embroidery or laser engraving")
 
             total_colors = len(results['fills']) + len(results['spot_colors'])
-            if total_colors > 6:
+            if total_colors > 6 and not many_fills:
                 results['warnings'].append(f"⚠️ {total_colors} colors detected — in screen printing each color is a separate screen, so cost rises with every color")
 
             # Detect mixed color spaces
@@ -1716,7 +1697,7 @@ class ColorExtractor:
 
     def _extract_from_eps(self, input_file, results):
         """Extract colors from EPS using GS->PDF->fitz pipeline for binary EPS support"""
-        import re, tempfile, os, subprocess
+        import re
 
         results['color_mode'] = self._detect_color_mode_eps(input_file)
         tmp_pdf = None
@@ -1835,19 +1816,23 @@ class ColorExtractor:
         try:
             import fitz
             doc = fitz.open(input_file)
-            for xref in range(1, min(doc.xref_count(), 500)):
+            # (this used to call doc.xref_count(), which does not exist: the error was
+            # swallowed and only the raw scan below ran, which cannot see inside
+            # compressed objects, so such files came out as "Unknown")
+            for xref in range(1, min(doc.xref_length(), 5000)):
                 try:
                     obj = doc.xref_object(xref)
                     if '/DeviceCMYK' in obj: has_cmyk = True
                     if '/DeviceRGB' in obj: has_rgb = True
                     if '/Separation' in obj or 'PANTONE' in obj: has_spot = True
                 except: pass
+            # What the page itself paints with. (Not get_drawings(): it reports every
+            # fill as RGB, whatever the file uses.)
             try:
-                page = doc[0]
-                for d in page.get_drawings():
-                    fill = d.get('fill') or []
-                    if len(fill) == 4: has_cmyk = True
-                    if len(fill) == 3: has_rgb = True
+                import re
+                ops = doc[0].read_contents().decode('latin-1', errors='ignore')
+                if re.search(r'(?<=\s)(k|K)(?=\s)', ops): has_cmyk = True
+                if re.search(r'(?<=\s)(rg|RG)(?=\s)', ops): has_rgb = True
             except: pass
             doc.close()
         except: pass
@@ -1956,18 +1941,12 @@ class ColorExtractor:
                 if ph:
                     spot_colors[ph] = {'label': ph, 'type': 'spot'}
 
-            named_colors = []  # covered by pantone_hits above
-            for nc in named_colors:
-                nc = nc.replace('-', ' ').strip()
-                if nc not in spot_colors:
-                    spot_colors[nc] = {'label': nc, 'type': 'spot'}
-
             fill_matches = re.findall(r'fill[\s:="\']+([#][0-9a-fA-F]{3,6})', content)
             stroke_matches = re.findall(r'stroke[\s:="\']+([#][0-9a-fA-F]{3,6})', content)
             stroke_widths = re.findall(r'stroke-width[\s:="\']+([\d.]+)', content)
 
             has_spots = len(spot_colors) > 0
-            artifact_hex = {'#ffffff', '#000000', '#FFFFFF', '#000000'}
+            artifact_hex = {'#ffffff', '#000000', '#fff', '#000'}
 
             for val in fill_matches:
                 if has_spots and val.lower() in artifact_hex:
@@ -2130,7 +2109,7 @@ class PdfConverter:
       EPS -> Ghostscript pdfwrite (keeps paths, CMYK values and spot colors)
       AI  -> the PDF copy Illustrator stores inside the file, re-saved with fitz
       SVG -> CairoSVG's PDF surface
-      CDR -> convert_cdr(): libcdr -> clean SVG -> CairoSVG's PDF surface (page 1, RGB)
+      CDR -> convert_cdr(): libcdr -> clean SVG -> PDF (page 1, RGB)
     Every result is inspected afterwards, so the UI can say whether the PDF
     really is vector instead of assuming it.
 
@@ -2391,6 +2370,13 @@ def _render_decoration_check(facts, file_label):
         ctx['prescreen'] = dr.artbot_summary(ev)
 
 
+def _safe_hex(value):
+    """A color for a style attribute: '#rgb' or '#rrggbb', anything else becomes gray."""
+    import re
+    value = str(value or '')
+    return value if re.fullmatch(r'#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?', value) else '#cccccc'
+
+
 def render_color_results(color_data, file_ext):
     """Render color extraction results in Streamlit"""
     if not color_data:
@@ -2423,18 +2409,18 @@ def render_color_results(color_data, file_ext):
         for sc in color_data['spot_colors']:
             label = sc['label']
             swatch = '<span style="display:inline-block;width:16px;height:16px;background:#888;border:1px solid #666;border-radius:3px;vertical-align:middle;margin-right:6px;"></span>'
-            st.markdown(f"{swatch}<code>{label}</code>", unsafe_allow_html=True)
+            st.markdown(f"{swatch}<code>{html.escape(str(label))}</code>", unsafe_allow_html=True)
 
     # Fill colors
     if color_data.get('fills'):
         st.markdown("**🖌️ Fill Colors:**")
         for fill in color_data['fills']:
-            hex_val = fill.get('hex', '#cccccc')
+            hex_val = _safe_hex(fill.get('hex'))
             opacity = fill.get('opacity', 100)
             opacity_str = f" @ {opacity}% opacity" if opacity < 100 else ""
             swatch = f'<span style="display:inline-block;width:16px;height:16px;background:{hex_val};border:1px solid #666;border-radius:3px;vertical-align:middle;margin-right:6px;"></span>'
             st.markdown(
-                f'{swatch}<code>{fill["label"]}</code>{opacity_str} <span style="color:#888;font-size:0.85rem;">({fill.get("space","")})</span>',
+f'{swatch}<code>{html.escape(str(fill["label"]))}</code>{opacity_str} <span style="color:#888;font-size:0.85rem;">({html.escape(str(fill.get("space","")))})</span>',
                 unsafe_allow_html=True
             )
 
@@ -2442,12 +2428,12 @@ def render_color_results(color_data, file_ext):
     if color_data.get('strokes'):
         st.markdown("**✏️ Stroke Colors:**")
         for stroke in color_data['strokes']:
-            hex_val = stroke.get('hex', '#cccccc')
+            hex_val = _safe_hex(stroke.get('hex'))
             width = stroke.get('width', 1)
             hairline = " ⚠️ hairline" if width < 0.5 else ""
             swatch = f'<span style="display:inline-block;width:16px;height:16px;background:{hex_val};border:1px solid #666;border-radius:3px;vertical-align:middle;margin-right:6px;"></span>'
             st.markdown(
-                f'{swatch}<code>{stroke["label"]}</code> — {width}pt{hairline}',
+                f'{swatch}<code>{html.escape(str(stroke["label"]))}</code> — {width}pt{hairline}',
                 unsafe_allow_html=True
             )
 
@@ -2616,13 +2602,17 @@ def build_artbot_system_prompt():
             lines.append(f"Color mode: {color_mode}")
         spots = color_data.get('spot_colors', [])
         if spots:
-            spot_names = [s.get('name', '') for s in spots if s.get('name')]
-            lines.append(f"Spot/Pantone colors found: {', '.join(spot_names) if spot_names else len(spots)}")
+            spot_names = [str(s.get('label') or '')[:60] for s in spots if s.get('label')][:20]
+            lines.append(f"Spot/Pantone colors found ({len(spots)}): {', '.join(spot_names) if spot_names else 'names not readable'}")
         fills = color_data.get('fills', [])
         if fills:
-            lines.append(f"Fill colors detected: {len(fills)}")
+            fill_names = [str(f.get('label') or '')[:40] for f in fills if f.get('label')][:12]
+            more = f" (first {len(fill_names)} listed)" if len(fills) > len(fill_names) else ""
+            lines.append(f"Fill colors detected: {len(fills)}{more}: {'; '.join(fill_names)}")
         if color_data.get('gradients'):
             lines.append(f"Gradients detected: {len(color_data['gradients'])}")
+        if color_data.get('warnings'):
+            lines.append("Color warnings shown to the user: " + '; '.join(str(w)[:160] for w in color_data['warnings'][:6]))
 
     # Fonts
     fc = ctx.get('font_check')
@@ -2644,8 +2634,13 @@ def build_artbot_system_prompt():
     if emb and isinstance(emb, dict):
         if emb.get('stitch_count'):
             lines.append(f"Stitch count: {emb['stitch_count']:,}")
+        if emb.get('thread_changes') is not None:
+            lines.append(f"Thread changes: {emb['thread_changes']}")
         if emb.get('thread_colors'):
-            lines.append(f"Thread colors: {emb['thread_colors']}")
+            _hexes = [c.get('hex') for c in emb['thread_colors'] if isinstance(c, dict) and c.get('hex')][:16]
+            lines.append(f"Thread colors in the file ({emb.get('unique_color_count', len(_hexes))} unique): {', '.join(_hexes)}")
+        else:
+            lines.append("Thread colors: the file carries no color data (normal for .dst); they are chosen at the machine.")
 
     lines.append("\nUse this file context to give specific, relevant advice. Reference the actual file details in your answers rather than speaking generically.")
     lines.append("--- END FILE CONTEXT ---")
@@ -2678,8 +2673,6 @@ def _artbot_sidebar_body():
 
     if "artbot_history" not in st.session_state:
         st.session_state.artbot_history = []
-    if "artbot_input_value" not in st.session_state:
-        st.session_state.artbot_input_value = ""
     if "artbot_input_key" not in st.session_state:
         st.session_state.artbot_input_key = 0
     if "artbot_pending" not in st.session_state:
@@ -2744,7 +2737,6 @@ def _artbot_sidebar_body():
         # and that used to leave the question in the chat with no answer and no
         # error. Now the next run simply asks again.
         q = st.session_state.artbot_pending
-        st.session_state.artbot_input_value = ""
         with st.spinner("🤖 ArtBot is thinking..."):
             _run_artbot(q)
         if st.session_state.artbot_pending == q:
@@ -2865,7 +2857,7 @@ def _clear_file_state():
     for _key in ('preview_image_bytes', 'preview_result', 'preview_color_data', 'preview_filename',
                  'preview_download_bytes', 'preview_pdf_bytes', 'preview_alpha_bytes', 'preview_image_bg',
                  '_page_autogen_attempt', 'artbot_file_context', '_raster_analysis', '_pdf_probe', '_xcf_flat',
-                 '_sample_active', '_sample_autogen'):
+                 '_sample_active', '_sample_autogen', 'preview_file_id', 'preview_effective_ext'):
         st.session_state.pop(_key, None)
     _old_token = st.session_state.pop('mockup_handoff_token', None)
     if _old_token:
@@ -2935,21 +2927,15 @@ if uploaded_file:
                 and not _k.endswith(_current_suffix):
             del st.session_state[_k]
 
-    # Clear stored preview if a different file is uploaded
+    # Forget the stored results when a different file arrives. Compared by name,
+    # size and upload id: a re-exported file usually keeps its name.
+    _upload_id = f"{uploaded_file.name}|{uploaded_file.size}|{getattr(uploaded_file, 'file_id', '')}"
     if st.session_state.get('preview_filename') and \
-            st.session_state.get('preview_filename') != uploaded_file.name:
-        st.session_state.pop('preview_image_bytes', None)
-        st.session_state.pop('preview_result', None)
-        st.session_state.pop('preview_color_data', None)
-        st.session_state.pop('preview_filename', None)
-        st.session_state.pop('preview_download_bytes', None)
-        st.session_state.pop('preview_pdf_bytes', None)
-        st.session_state.pop('preview_alpha_bytes', None)
-        st.session_state.pop('preview_image_bg', None)
-        st.session_state.pop('_page_autogen_attempt', None)
-        st.session_state.pop('artbot_file_context', None)
-        st.session_state.pop('_raster_analysis', None)
-        st.session_state.pop('_xcf_flat', None)
+            st.session_state.get('preview_file_id', _upload_id) != _upload_id:
+        _keep_sample = st.session_state.get('_sample_active'), st.session_state.get('_sample_autogen')
+        _clear_file_state()
+        if _keep_sample[0]:
+            st.session_state['_sample_active'], st.session_state['_sample_autogen'] = _keep_sample
 
     # InDesign: cannot be rendered without InDesign. Show the small page preview
     # InDesign saves inside the file (when there is one) plus what to ask for.
@@ -3107,10 +3093,6 @@ if uploaded_file:
                     st.session_state[_cache_key] = (_base_image["image"], _base_image["ext"])
                 _lazy_pdf.close()
                 _img_bytes, _img_ext = st.session_state[_cache_key]
-                # Save extracted image to temp file
-                _img_tmp = tempfile.mktemp(suffix=f'.{_img_ext}')
-                with open(_img_tmp, 'wb') as _f:
-                    _f.write(_img_bytes)
                 # Background selector
                 if 'bg_type_raster_pdf' not in st.session_state:
                     st.session_state.bg_type_raster_pdf = 'auto'
@@ -3123,35 +3105,28 @@ if uploaded_file:
                             st.session_state.bg_type_raster_pdf = _val
                             st.rerun()
                 st.caption(f"Background: **{st.session_state.bg_type_raster_pdf.title()}**")
-                # Apply background to extracted image — downsize first to save memory
-                from PIL import Image as _PIL_Image
-                _preview_img = _PIL_Image.open(_img_tmp).convert('RGBA')
+                # Downsize first to save memory, then the same backgrounds as every other
+                # preview (Auto used to mean plain white here, and Transparent no checkerboard)
+                _preview_img = Image.open(io.BytesIO(_img_bytes)).convert('RGBA')
                 _max_dim = 1200
                 if max(_preview_img.size) > _max_dim:
                     _ratio = _max_dim / max(_preview_img.size)
                     _preview_img = _preview_img.resize(
-                        (int(_preview_img.width * _ratio), int(_preview_img.height * _ratio)),
-                        _PIL_Image.LANCZOS
-                    )
-                _bg = st.session_state.bg_type_raster_pdf
-                if _bg in ('light', 'auto'):
-                    _bg_layer = _PIL_Image.new('RGBA', _preview_img.size, (255, 255, 255, 255))
-                    _bg_layer.paste(_preview_img, mask=_preview_img.split()[3])
-                    _preview_img = _bg_layer.convert('RGB')
-                elif _bg == 'dark':
-                    _bg_layer = _PIL_Image.new('RGBA', _preview_img.size, (30, 30, 30, 255))
-                    _bg_layer.paste(_preview_img, mask=_preview_img.split()[3])
-                    _preview_img = _bg_layer.convert('RGB')
-                # 'transparent' falls through with no background applied
+                        (int(_preview_img.width * _ratio), int(_preview_img.height * _ratio)), Image.LANCZOS)
+                _preview_img = compose_background(_preview_img, st.session_state.bg_type_raster_pdf)
                 st.image(_preview_img, caption="Extracted raster image from PDF", use_container_width=True)
-                # Run raster analysis (cached so it doesn't re-run on bg button clicks)
+                # Run raster analysis once (not again on background button clicks)
                 _analysis_key = f"raster_pdf_analysis_p{_page_index}_{uploaded_file.name}_{uploaded_file.size}"
                 if _analysis_key not in st.session_state:
-                    _raster_analyzer = RasterAnalyzer()
-                    st.session_state[_analysis_key] = _raster_analyzer.analyze(_img_tmp)
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{_img_ext}') as _img_file:
+                        _img_file.write(_img_bytes)
+                        _img_tmp = _img_file.name
+                    try:
+                        st.session_state[_analysis_key] = RasterAnalyzer().analyze(_img_tmp)
+                    finally:
+                        if os.path.exists(_img_tmp):
+                            os.unlink(_img_tmp)
                 _analysis = st.session_state[_analysis_key]
-                # Clean up
-                if os.path.exists(_img_tmp): os.unlink(_img_tmp)
                 # Store ArtBot context
                 st.session_state['artbot_file_context'] = {
                     'filename': uploaded_file.name,
@@ -3359,6 +3334,7 @@ if uploaded_file:
             st.session_state['preview_result'] = result
             st.session_state['preview_color_data'] = color_data
             st.session_state['preview_filename'] = uploaded_file.name
+            st.session_state['preview_file_id'] = _upload_id
             st.session_state['preview_effective_ext'] = _eff_suffix
             st.session_state['artbot_file_context'] = {
                 'filename': uploaded_file.name,
@@ -3375,7 +3351,9 @@ if uploaded_file:
                 'color_data': color_data,
                 'embroidery_info': result.get('embroidery_info'),
             }
-        st.rerun()  # Rerun so session state block handles all rendering cleanly
+            st.rerun()  # Rerun so session state block handles all rendering cleanly
+        # No rerun when the preview could not be made: a rerun here used to wipe the
+        # "Could not convert file" message, so a bad file looked like nothing happened.
 
 # Render stored preview from session state (persists across ArtBot reruns)
 if st.session_state.get('preview_image_bytes') and st.session_state.get('preview_result'):

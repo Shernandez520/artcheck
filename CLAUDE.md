@@ -51,7 +51,16 @@ the fallback when that yields an empty page) → rendered with fitz. cdr2xhtml p
 ("SVG size is undefined") and fitz then lays it out as a tall HTML page. Page 1
 only; real page size comes from the converted PDF. One conversion per run is
 shared by both preview renders and the PDF download (`_CDR_CONVERSIONS`).
-Embroidery: pyembroidery → PIL visualization.
+Embroidery: pyembroidery → PIL drawing on a transparent canvas, each run of
+stitches in its thread color (black when the file has no colors, as most .dst).
+pyembroidery commands are VALUES in the low byte (STITCH 0, JUMP 1, TRIM 2,
+STOP 3, END 4, COLOR_CHANGE 5), compared with `==` after `& COMMAND_MASK`.
+Testing them with `&` as if they were bit flags counted every jump as a thread
+change.
+A file that cannot be rendered gets ONE plain `st.error` starting "Could not
+convert file"; the renderers themselves fail silently (their own warnings showed
+temp paths and library names). The Generate block must NOT `st.rerun()` after a
+failure, or that message is wiped before anyone can read it.
 **One render per Generate Preview, always transparent** (`'transparent_alpha'`).
 The background is added afterwards by `compose_background()`; both fitz
 (alpha=True) and GS (pngalpha) must render with transparency for that to work.
@@ -116,7 +125,14 @@ would say CMYK, because that word is in Illustrator's boilerplate). More than
 PDF spot names: the xref scan decodes `#20` (PDF writes `/PANTONE#20289#20C`)
 and reads any `/Separation` name, Pantone or not. That scan called a method that
 does not exist until Nov 2026 and silently never ran; only files with a plain
-"PANTONE nnn" string somewhere were caught.
+"PANTONE nnn" string somewhere were caught. `_detect_color_mode_pdf()` had the
+same mistake, so PDFs with compressed objects came out as "Unknown"; it now reads
+the xref objects and the page's own operators (`k`/`K`, `rg`/`RG`). Do not use
+`get_drawings()` to decide the color mode: it reports every fill as RGB.
+More than 24 fills in a PDF / AI means gradients: 12 are listed with a note,
+as for EPS.
+ArtBot's file context lists the spot names and the first fills (it used to read
+a key that does not exist and only got the count).
 
 **File Type label:** `mixed_label()` turns `Vector (EPS)` into
 `Vector + raster (EPS)` when the file also holds pictures (image count from the
@@ -277,7 +293,15 @@ questions below it.
 
 ### Clearing a file
 `_clear_file_state()` is the single place that forgets a file. It is used by both
-New File buttons and by the uploader's `on_change` callback (the X).
+New File buttons, by the uploader's `on_change` callback (the X), and when a
+different file arrives. "Different" is name + size + upload id
+(`preview_file_id`), not the name alone: a re-exported file keeps its name.
+
+### Text from uploaded files in HTML
+Spot color names, font names and file names come out of the customer's file.
+Anything from a file that goes into `unsafe_allow_html` markup is passed through
+`html.escape` (colors through `_safe_hex`), and the Mockup Builder handoff writes
+the file name with `json.dumps`. Keep doing that for new displays.
 
 ### Mockup Builder
 `static/mockup.html` served through `components.html()`; `?mockup=1` route.

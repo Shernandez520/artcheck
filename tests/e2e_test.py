@@ -220,6 +220,51 @@ def check_sample_file(app):
     app.no_errors()
 
 
+def check_unreadable_file_message(app):
+    """A file that cannot be opened must say so, in plain words, and keep saying so."""
+    import os
+    import tempfile
+    folder = tempfile.mkdtemp()
+    bad = os.path.join(folder, "damaged.pdf")
+    with open(bad, "wb") as fh:
+        fh.write(b"%PDF-1.4\nthis is not really a pdf\n")
+    page = app.fresh()
+    page.locator("input[type=file]").set_input_files(bad)
+    page.get_by_text("Uploaded:").wait_for(timeout=30_000)
+    page.get_by_role("button", name="🚀 Generate Preview").click()
+    page.get_by_text("Could not convert file").wait_for(timeout=60_000)
+    page.wait_for_timeout(3000)   # the message used to vanish when the page refreshed itself
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    expect("Could not convert file" in body, "the error message disappeared after the page settled")
+    expect("/tmp/" not in body and "PyMuPDF" not in body and "pdf2image" not in body,
+           "the error shows internal details (temp file paths or library names)")
+    expect("Preview generated successfully" not in body, "a damaged file produced a preview")
+    app.no_errors()
+
+
+def check_same_name_new_file(app):
+    """Uploading a different file that has the same name must not keep the old results."""
+    import os
+    import shutil
+    import tempfile
+    first, second = tempfile.mkdtemp(), tempfile.mkdtemp()
+    shutil.copy(os.path.join(app.fixtures, "logo_red_3x2in.pdf"), os.path.join(first, "logo.pdf"))
+    shutil.copy(os.path.join(app.fixtures, "letter_page.pdf"), os.path.join(second, "logo.pdf"))
+    page = app.fresh()
+    page.locator("input[type=file]").set_input_files(os.path.join(first, "logo.pdf"))
+    page.get_by_text("Uploaded:").wait_for(timeout=30_000)
+    app.generate()
+    expect(metrics(page).get("Size (inches)") == '3.0" x 2.0"', "first file did not preview")
+    page.locator("input[type=file]").set_input_files(os.path.join(second, "logo.pdf"))
+    page.get_by_text("Preview generated successfully").wait_for(state="detached", timeout=30_000)
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    expect('3.0" x 2.0"' not in body and "Color Analysis" not in body,
+           "results of the first file are still shown for a different file with the same name")
+    app.generate()
+    expect(metrics(page).get("Size (inches)") == '8.5" x 11.0"', f"second file shows {metrics(page).get('Size (inches)')}")
+    app.no_errors()
+
+
 def check_mixed_file_label(app):
     page = app.fresh()
     app.upload_vector("logo_with_photo.pdf")
@@ -460,7 +505,30 @@ def check_embroidery(app):
     app.generate()
     m = metrics(page)
     expect(m.get("Stitch Count") == "200", f"Stitch Count shows {m.get('Stitch Count')}")
+    # one thread, no color changes (jumps used to be counted as thread changes)
+    expect(m.get("Thread Changes") == "0", f"Thread Changes shows {m.get('Thread Changes')} for a one-color design")
     expect(m.get("Size (inches)") == '0.75" x 0.35"', f"Size (inches) shows {m.get('Size (inches)')}")
+    app.no_errors()
+
+
+def check_embroidery_colors(app):
+    from PIL import Image
+    page = app.fresh()
+    app.upload_vector("two_color.pes")
+    app.generate()
+    m = metrics(page)
+    expect(m.get("Stitch Count") == "120", f"Stitch Count shows {m.get('Stitch Count')}")
+    expect(m.get("Thread Changes") == "1", f"Thread Changes shows {m.get('Thread Changes')} for a two-color design")
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    expect("2 unique" in body, "the two thread colors are not listed")
+    # the stitches are drawn in their thread colors, on a transparent background
+    with page.expect_download(timeout=30_000) as dl:
+        page.get_by_role("button", name="Download PNG").click()
+    img = Image.open(dl.value.path()).convert("RGBA")
+    solid = {c[:3] for _, c in (img.getcolors(2_000_000) or []) if c[3] == 255}
+    expect(any(r > 180 and b < 90 for r, g, b in solid), "no red stitches in the preview")
+    expect(any(b > 150 and r < 90 for r, g, b in solid), "no blue stitches in the preview")
+    expect(img.getchannel("A").getextrema()[0] == 0, "the stitch preview has no transparent background")
     app.no_errors()
 
 
@@ -939,6 +1007,8 @@ CHECKS = [
     ("'Try a sample logo' runs the whole check in one click", check_sample_file),
     ("Sun / moon button switches light and dark without losing the file", check_theme_toggle),
     ("Vector file with a picture inside is labelled 'Vector + raster'", check_mixed_file_label),
+    ("A file that cannot be opened says so in plain words", check_unreadable_file_message),
+    ("A different file with the same name replaces the old results", check_same_name_new_file),
     ("Vector PDF: preview, real size in inches, CMYK color analysis", check_vector_pdf),
     ("Mockup Builder gets the current file after switching files", check_mockup_after_switch),
     ("SVG without units: preview, size shown as Scalable", check_svg),
@@ -964,6 +1034,7 @@ CHECKS = [
     ("PDF export warns when the original contains a raster image", check_pdf_export_flags_raster),
     ("PDF export is not offered for files that are already PDF", check_pdf_export_not_offered_for_pdf),
     ("Embroidery file: stitch count and real size", check_embroidery),
+    ("Stitch file with two thread colors: colors drawn, one thread change", check_embroidery_colors),
     ("Raster image: quality verdict, print sizes at 300 and 200 dpi only", check_raster_png),
     ("Pure black and pure yellow are listed when painted; unused colors are not", check_pure_ink_colors),
     ("Color-count warning matches the Decoration Method Check (no fixed maximum)", check_color_count_wording),
