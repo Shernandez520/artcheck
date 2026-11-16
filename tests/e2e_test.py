@@ -118,6 +118,57 @@ def check_home(app):
     expect("GIMP (.xcf) files are flattened to one image. InDesign (.indd) files show a small thumbnail only." in body,
            "the note about what GIMP and InDesign uploads get is missing")
     expect("upload them" not in body.lower(), "the page should not invite users to upload unsupported files")
+    # The page is designed dark; it must not depend on the visitor's own light / dark setting
+    bg = page.evaluate("getComputedStyle(document.querySelector('[data-testid=\"stApp\"]')).backgroundColor")
+    r, g, b = [int(v) for v in bg[bg.index("(") + 1:bg.index(")")].split(",")[:3]]
+    expect(max(r, g, b) < 60, f"the page background is {bg}; the dark theme is not applied")
+    expect(page.get_by_role("button", name="✨ No file handy? Try a sample logo").count() == 1,
+           "the 'Try a sample logo' button is missing")
+    # ArtBot: the question box sits directly under the chat window, above the example questions
+    box_y = page.get_by_placeholder("Ask anything...").bounding_box()["y"]
+    example_y = page.get_by_role("button", name="Difference between vector and raster?").bounding_box()["y"]
+    expect(box_y < example_y, "ArtBot's question box is below the example questions")
+    app.no_errors()
+
+
+def check_sample_file(app):
+    page = app.fresh()
+    page.get_by_role("button", name="✨ No file handy? Try a sample logo").click()
+    # one click: the preview is generated without pressing Generate Preview
+    page.get_by_text("Preview generated successfully").wait_for(timeout=90_000)
+    page.wait_for_timeout(2500)
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    m = metrics(page)
+    expect("Sample loaded" in body, "no note that this is the built-in sample")
+    expect(m.get("Size (inches)") == '4.0" x 2.5"', f"sample size shows {m.get('Size (inches)')}")
+    expect(m.get("File Type") == "Vector (AI)", f"sample File Type shows {m.get('File Type')}")
+    expect("PANTONE 289 C" in body and "PANTONE 1235 C" in body, "the sample's two Pantone colors are not listed")
+    expect("Live text found" in body, "the sample's live text is not flagged by the Font Check")
+    expect("Decoration Method Check" in body, "the Decoration Method Check is missing for the sample")
+    pdf = download_pdf(page)
+    expect(pdf["images"] == 0 and pdf["paths"] > 10, f"sample PDF has {pdf['paths']} paths and {pdf['images']} images")
+    sidebar = page.locator('[data-testid="stSidebar"]').inner_text()
+    expect("sample_logo.ai" in sidebar, "ArtBot does not know about the sample file")
+    # New File goes back to the empty page with the sample button
+    page.get_by_role("button", name="🔄 New File").click()
+    page.get_by_role("button", name="✨ No file handy? Try a sample logo").wait_for(timeout=20_000)
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    expect("Preview generated successfully" not in body and "Color Analysis" not in body, "the sample's results stayed after New File")
+    # a real upload afterwards behaves normally
+    app.upload_vector("logo_red_3x2in.pdf")
+    app.generate()
+    expect(metrics(page).get("Size (inches)") == '3.0" x 2.0"', "a real upload after the sample did not replace it")
+    app.no_errors()
+
+
+def check_mixed_file_label(app):
+    page = app.fresh()
+    app.upload_vector("logo_with_photo.pdf")
+    app.generate()
+    file_type = metrics(page).get("File Type", "")
+    expect(file_type == "Vector + raster (PDF)", f"a vector PDF with a picture inside is labelled '{file_type}'")
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    expect("Usable Print Sizes" not in body, "a mixed file was sent down the image-only flow")
     app.no_errors()
 
 
@@ -826,6 +877,8 @@ def check_gimp_damaged(app):
 
 CHECKS = [
     ("App loads with uploader and ArtBot sidebar, one list of file types", check_home),
+    ("'Try a sample logo' runs the whole check in one click", check_sample_file),
+    ("Vector file with a picture inside is labelled 'Vector + raster'", check_mixed_file_label),
     ("Vector PDF: preview, real size in inches, CMYK color analysis", check_vector_pdf),
     ("Mockup Builder gets the current file after switching files", check_mockup_after_switch),
     ("SVG without units: preview, size shown as Scalable", check_svg),
