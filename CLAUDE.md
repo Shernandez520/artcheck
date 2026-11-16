@@ -250,11 +250,30 @@ name). The home page button sets `_sample_active` + `_sample_autogen`;
 `getvalue()` are all the flow uses) and Generate runs once by itself. A real
 upload or `_clear_file_state()` ends sample mode.
 
-### Look
-`.streamlit/config.toml` sets `[theme] base = "dark"`. The custom boxes and the
-ArtBot chat are designed for dark; without the pin, visitors in light mode got
-pale text on white. In the sidebar the question box sits directly under the
-chat window, example questions below it.
+### Look: light / dark (sun / moon button, top right)
+Dark is the default; the visitor can switch and the browser remembers it.
+Streamlit 1.43 has no Python call for this, so `THEME_TOGGLE_HTML` (a small
+`components.html` frame in `st.container(key="theme_toggle")`) does it from the
+page side:
+- Streamlit stores the theme in localStorage (`stActiveTheme-<path>-v1`,
+  `{"name": "Dark" | "Light"}`) and switches live when it gets the
+  `SET_CUSTOM_THEME_CONFIG` host message. That message is only accepted from
+  Streamlit's own hosting origins, so the button dispatches a `MessageEvent`
+  with one of those origins on the parent window. No reload, session state kept.
+- **Do not add a `[theme]` block to `.streamlit/config.toml`.** It makes the
+  active theme a "Custom Theme", and Streamlit then ignores name-only switches.
+- `<html data-ac-theme="light|dark">` is set by the button (and by the script
+  `inject_ga.py` adds to index.html, so a first visit does not flash white).
+  ArtCheck's own colors are CSS variables (`--ac-*`) in the Custom CSS block,
+  with a `:root[data-ac-theme="light"]` set. New custom HTML must use those
+  variables, not hard-coded dark colors.
+- Frames have their own document: the ArtBot chat page and the preview viewer
+  copy the attribute from the parent (`MutationObserver`) and carry their own
+  `html[data-theme="light"]` rules.
+- This leans on Streamlit internals. The version is pinned and
+  `check_theme_toggle` in the browser test fails if it stops working.
+In the sidebar the question box sits directly under the chat window, example
+questions below it.
 
 ### Clearing a file
 `_clear_file_state()` is the single place that forgets a file. It is used by both
