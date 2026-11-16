@@ -173,6 +173,15 @@ rotation to clear input, `artbot_pending` → rerun pattern, streaming via
 `client.messages.stream()`. Session state: `artbot_history`, `artbot_pending`,
 `artbot_input_key`, `bg_type`.
 
+**A question stays in `artbot_pending` until its answer is in the history.**
+Streamlit abandons a running script as soon as the user clicks anything else (or
+the browser reconnects); the abandoned run's answer is lost. Clearing `pending`
+before the API call left the question in the chat with no answer and no error.
+`_run_artbot()` therefore tolerates being called again for a question already in
+the history. The client has a 60 s timeout; an empty answer becomes a message.
+The file context includes `pdf_export` (path and embedded-image counts) so
+ArtBot can answer "is this really vector?".
+
 **Chat display:** `artbot_chat_page(history)` builds a self-contained HTML page,
 shown with `components.html()`. Answers are Markdown → HTML via `markdown-it-py`
 with raw HTML disabled; user text is `html.escape`d. Never paste model or user
