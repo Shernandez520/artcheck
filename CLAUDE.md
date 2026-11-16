@@ -254,10 +254,12 @@ Railway's proxy drops idle WebSockets. Three layers:
 ## Dev Workflow
 ```bash
 git clone https://github.com/Shernandez520/artcheck.git
+git checkout -b <branch>
 # edit app_with_embroidery.py  (the production file)
-git add <files> && git commit -m "..." && git push   # deploys immediately
+git add <files> && git commit -m "..." && git push -u origin <branch>
+# open a pull request; merging it to main deploys immediately
 ```
-Monitor deploys in the Railway dashboard. Test file uploads (EPS + PDF + PNG)
+Never push straight to `main`. Monitor deploys in the Railway dashboard. Test file uploads (EPS + PDF + PNG)
 after every deploy — upload is the core feature.
 
 ### Automated browser test (runs on every pull request)
@@ -266,7 +268,10 @@ with a 1 GB memory limit, and runs `tests/e2e_test.py` (Playwright) against it:
 PDF, EPS, SVG, DST, PNG, raster-in-PDF, .indd, .xcf, file switching, Mockup Builder
 handoff, render cap, Auto background, sizes, multi-page notice, Font Check,
 Decoration Method Check, vector PDF export (the downloaded PDF is opened and
-checked for paths, images, page size and spot colors). `tests/test_decoration_rules.py` unit-tests the rules. It also fails if temp files are left in
+checked for paths, images, page size and spot colors). Unit tests run in the same job:
+`tests/test_decoration_rules.py` (rules), `tests/test_cdr_tools.py` (CorelDRAW
+helper), `tests/test_xcf_tools.py` (GIMP reader against GIMP's own exports) and
+`tests/test_indd_tools.py` (InDesign thumbnail). It also fails if temp files are left in
 `/tmp` or the container is OOM-killed. Sample files come from
 `tests/make_fixtures.py` — no real artwork in the repo (the only binary samples
 are the generated-shape GIMP files in `tests/data/xcf`). GA requests are blocked.
