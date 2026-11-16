@@ -126,7 +126,7 @@ def check_vector_pdf(app):
     app.generate()
     m = metrics(page)
     expect(m.get("Size (inches)") == '3.0" x 2.0"', f"expected 3.0\" x 2.0\", page shows {m.get('Size (inches)')}")
-    expect("Vector" in m.get("File Type", ""), f"File Type shows {m.get('File Type')}")
+    expect(m.get("File Type") == "Vector (PDF)", f"File Type shows {m.get('File Type')}")
     uploaded_kb = round(os.path.getsize(os.path.join(app.fixtures, "logo_red_3x2in.pdf")) / 1024, 2)
     expect(m.get("File Size") == f"{uploaded_kb} KB", f"File Size shows {m.get('File Size')}, the uploaded file is {uploaded_kb} KB")
     expect(page.get_by_text("ArtCheck previews and analyzes").count() == 0, "single-page PDF shows the multi-page notice")
@@ -259,6 +259,27 @@ def check_eps(app):
     colors = page.locator('[data-testid="stMain"]').inner_text().split("Color Analysis", 1)[1]
     expect("K:100%" in colors, "the EPS has a pure black shape, but black is not listed in Color Analysis")
     expect("C:0% M:100% Y:100% K:0%" in colors, "the EPS has a red shape, but red is not listed in Color Analysis")
+    app.no_errors()
+
+
+def check_eps_color_mode_from_header(app):
+    """Illustrator EPS files say 'Separation' throughout their boilerplate. That is not a spot color."""
+    page = app.fresh()
+    app.upload_vector("illustrator_style_black.eps")
+    app.generate()
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    expect("Document Color Mode: CMYK" in body, "a black-only EPS should be reported as CMYK")
+    expect("Spot" not in body.split("Color Analysis", 1)[1], "a black-only EPS is reported as having a spot color")
+    expect("K:100%" in body, "black is not listed")
+    expect(metrics(page).get("File Type") == "Vector (EPS)", f"File Type shows {metrics(page).get('File Type')}")
+
+    page = app.fresh()
+    app.upload_vector("illustrator_style_spot.eps")
+    app.generate()
+    colors = page.locator('[data-testid="stMain"]').inner_text().split("Color Analysis", 1)[1]
+    expect("Document Color Mode: Spot + CMYK" in colors, "an EPS with spot colors and black should be Spot + CMYK")
+    expect("PANTONE 186 C" in colors, "the Pantone spot color is not listed")
+    expect("Brand Blue" in colors, "the custom-named spot color is not listed")
     app.no_errors()
 
 
@@ -739,6 +760,7 @@ CHECKS = [
     ("Multi-page PDF: a scanned first page does not block the vector page", check_page_picker_reaches_vector_page),
     ("Background buttons switch the preview instantly, without Generate Preview", check_instant_background),
     ("EPS preview, size and colors including pure black (Ghostscript)", check_eps),
+    ("EPS color mode comes from the file's ink list, not the word 'Separation' (Ghostscript)", check_eps_color_mode_from_header),
     ("Font Check flags live text in a PDF, with embedded / not embedded", check_fonts_pdf),
     ("Font Check flags live text in an SVG", check_fonts_svg),
     ("Font Check flags live text in an EPS (Ghostscript)", check_fonts_eps),
@@ -791,7 +813,8 @@ def main():
         app = App(context, args.url, args.fixtures, args.screenshots)
 
         for number, (name, check) in enumerate(CHECKS, 1):
-            if check in (check_eps, check_fonts_eps, check_pdf_export_eps, check_pdf_export_eps_spot_color) and skip_eps:
+            if check in (check_eps, check_fonts_eps, check_pdf_export_eps, check_pdf_export_eps_spot_color,
+                         check_eps_color_mode_from_header) and skip_eps:
                 RESULTS.append((name, None, "skipped (SKIP_EPS=1)"))
                 continue
             try:

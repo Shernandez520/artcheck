@@ -93,6 +93,43 @@ def main(out_dir):
     # Illustrator files saved with PDF compatibility are PDFs inside
     vector_pdf(out / "logo_3x2in.ai", 216, 144, BLUE)
 
+    # Illustrator-style EPS headers. Illustrator declares its inks in the header and
+    # ALSO has the word "Separation" all through its boilerplate, which must not be
+    # read as a spot color.
+    boilerplate = "".join(f"% procset note {i}: /Separation and DeviceN handling\n" for i in range(5))
+    (out / "illustrator_style_black.eps").write_text(
+        "%!PS-Adobe-3.1 EPSF-3.0\n"
+        "%%BoundingBox: 0 0 216 144\n"
+        "%%DocumentProcessColors:  Black\n"
+        "%%DocumentCustomColors: \n"
+        "%%CMYKCustomColor: \n"
+        "%%EndComments\n" + boilerplate +
+        "0 0 0 1 setcmykcolor\n"
+        "20 20 176 104 rectfill\n"
+        "showpage\n"
+        "%%EOF\n"
+    )
+    (out / "illustrator_style_spot.eps").write_text(
+        "%!PS-Adobe-3.1 EPSF-3.0\n"
+        "%%BoundingBox: 0 0 216 144\n"
+        "%%DocumentProcessColors:  Black\n"
+        "%%DocumentCustomColors: (PANTONE 186 C)\n"
+        "%%+ (Brand Blue)\n"
+        "%%CMYKCustomColor: 0 1 0.81 0.04 (PANTONE 186 C)\n"
+        "%%+ 1 0.6 0 0 (Brand Blue)\n"
+        "%%EndComments\n" + boilerplate +
+        "[/Separation (PANTONE 186 C) /DeviceCMYK {dup 0 mul exch dup 1 mul exch dup 0.81 mul exch 0.04 mul}] setcolorspace\n"
+        "1 setcolor\n"
+        "20 20 80 104 rectfill\n"
+        "[/Separation (Brand Blue) /DeviceCMYK {dup 1 mul exch dup 0.6 mul exch dup 0 mul exch 0 mul}] setcolorspace\n"
+        "1 setcolor\n"
+        "110 20 80 104 rectfill\n"
+        "0 0 0 1 setcmykcolor\n"
+        "20 130 170 6 rectfill\n"
+        "showpage\n"
+        "%%EOF\n"
+    )
+
     # EPS with a Pantone spot color
     (out / "spot_logo.eps").write_text(
         "%!PS-Adobe-3.0 EPSF-3.0\n"
