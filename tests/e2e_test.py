@@ -170,12 +170,81 @@ def check_svg_with_units(app):
     app.no_errors()
 
 
+def wait_for_metric(page, label, value, timeout_s=90):
+    """Wait until a Preview Info tile shows the expected value (used after auto-regeneration)."""
+    for _ in range(timeout_s * 2):
+        if metrics(page).get(label) == value:
+            return
+        page.wait_for_timeout(500)
+    raise AssertionError(f"{label} never became {value}; it shows {metrics(page).get(label)}")
+
+
 def check_multi_page_pdf(app):
     page = app.fresh()
     app.upload_vector("two_pages.pdf")
     app.generate()
     expect(page.get_by_text("This file has 2 pages").count() > 0, "no notice that the PDF has 2 pages")
-    expect(metrics(page).get("Size (inches)") == '3.0" x 2.0"', f"Size (inches) shows {metrics(page).get('Size (inches)')}")
+    expect(page.get_by_text("Showing page 1").count() > 0, "the notice does not say which page is shown")
+    expect(metrics(page).get("Size (inches)") == '3.0" x 2.0"', f"page 1 size shows {metrics(page).get('Size (inches)')}")
+    colors = page.locator('[data-testid="stMain"]').inner_text().split("Color Analysis", 1)[1]
+    expect("C:0% M:100% Y:100% K:0%" in colors, "page 1 is red, but red is not listed")
+
+    # Pick page 2: the preview regenerates by itself, for that page only
+    pick(page, "Page", "Page 2 of 2")
+    wait_for_metric(page, "Size (inches)", '5.0" x 4.0"')
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    expect("Showing page 2" in body, "the notice does not say page 2 is shown")
+    colors = body.split("Color Analysis", 1)[1]
+    expect("C:100% M:60% Y:0% K:0%" in colors, "page 2 is blue, but blue is not listed")
+    expect("C:0% M:100% Y:100% K:0%" not in colors, "page 1's red is listed while page 2 is shown")
+    pick(page, "Decoration method", "Screen Print")
+    expect("Only page 2 of 2 was screened" in decoration_text(page), "the method check does not say which page it screened")
+
+    # ...and back to page 1
+    pick(page, "Page", "Page 1 of 2")
+    wait_for_metric(page, "Size (inches)", '3.0" x 2.0"')
+    app.no_errors()
+
+
+def check_page_picker_reaches_vector_page(app):
+    """Page 1 is a scan. The picker must still be usable so page 2 (vector) can be analyzed."""
+    page = app.fresh()
+    app.upload("scan_then_vector.pdf")
+    page.get_by_text("Raster image detected inside PDF").wait_for(timeout=30_000)
+    pick(page, "Page", "Page 2 of 2")
+    page.wait_for_timeout(1500)
+    expect(page.get_by_text("Raster image detected inside PDF").count() == 0, "page 2 is vector but is still treated as a picture")
+    app.generate()
+    m = metrics(page)
+    expect("Vector" in m.get("File Type", ""), f"File Type shows {m.get('File Type')}")
+    expect(page.get_by_text("Showing page 2").count() > 0, "the notice does not say page 2 is shown")
+    app.no_errors()
+
+
+def check_instant_background(app):
+    page = app.fresh()
+    app.upload_vector("logo_red_3x2in.pdf")
+    app.generate()
+
+    def corner():
+        return Image.open(io.BytesIO(app.preview_png())).convert("RGB").getpixel((2, 2))
+
+    def click_background(label, want, describe):
+        page.get_by_role("button", name=label).click()
+        for _ in range(16):      # 8 seconds at most: no Generate Preview click, no re-render
+            page.wait_for_timeout(500)
+            try:
+                if want(corner()):
+                    return
+            except Exception:
+                pass
+        raise AssertionError(f"{label}: the preview did not switch to {describe} on its own (corner pixel {corner()})")
+
+    expect(min(corner()) > 240, f"Auto on a red logo should start on white, got {corner()}")
+    click_background("🌙 Dark", lambda c: max(c) < 60, "a dark background")
+    click_background("⬜ Transparent", lambda c: c in ((204, 204, 204), (153, 153, 153)), "the checkerboard")
+    click_background("☀️ Light", lambda c: min(c) > 240, "a white background")
+    expect(page.get_by_text("click Generate Preview to apply").count() == 0, "the old 'click Generate Preview to apply' hint is still shown")
     app.no_errors()
 
 
@@ -490,6 +559,19 @@ def check_pdf_export_ai(app):
     app.no_errors()
 
 
+def check_pdf_export_multi_page_ai(app):
+    page = app.fresh()
+    app.upload_vector("two_artboards.ai")
+    app.generate()
+    pick(page, "Page", "Page 2 of 2")
+    wait_for_metric(page, "Size (inches)", '5.0" x 4.0"')
+    expect(page.get_by_text("The PDF contains all 2 pages").count() > 0, "no note that the PDF holds every page")
+    pdf = download_pdf(page)
+    expect(pdf["pages"] == 2, f"the PDF has {pdf['pages']} page(s); the AI file has 2 artboards")
+    expect(pdf["paths"] > 0 and pdf["images"] == 0, "the multi-page PDF is not vector")
+    app.no_errors()
+
+
 def check_pdf_export_eps(app):
     page = app.fresh()
     app.upload_vector("logo_3x2in.eps")
@@ -653,7 +735,9 @@ CHECKS = [
     ("Mockup Builder gets the current file after switching files", check_mockup_after_switch),
     ("SVG without units: preview, size shown as Scalable", check_svg),
     ("SVG with real-world units: size in inches", check_svg_with_units),
-    ("Multi-page PDF shows a page-1-only notice", check_multi_page_pdf),
+    ("Multi-page PDF: page picker switches preview, size, colors and method check", check_multi_page_pdf),
+    ("Multi-page PDF: a scanned first page does not block the vector page", check_page_picker_reaches_vector_page),
+    ("Background buttons switch the preview instantly, without Generate Preview", check_instant_background),
     ("EPS preview, size and colors including pure black (Ghostscript)", check_eps),
     ("Font Check flags live text in a PDF, with embedded / not embedded", check_fonts_pdf),
     ("Font Check flags live text in an SVG", check_fonts_svg),
@@ -664,6 +748,7 @@ CHECKS = [
     ("Decoration check: DTFx flags art that fades to transparent", check_decoration_dtfx_fades),
     ("PDF export from SVG is vector and the right size", check_pdf_export_svg),
     ("PDF export from AI is vector and the right size", check_pdf_export_ai),
+    ("PDF export from a multi-artboard AI keeps every page", check_pdf_export_multi_page_ai),
     ("PDF export from EPS is vector and the right size (Ghostscript)", check_pdf_export_eps),
     ("PDF export from EPS keeps the Pantone spot color (Ghostscript)", check_pdf_export_eps_spot_color),
     ("PDF export warns when the original contains a raster image", check_pdf_export_flags_raster),

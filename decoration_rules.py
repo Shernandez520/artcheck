@@ -151,6 +151,7 @@ def facts_from_vector(result, color_data):
         "color_mode": None,
         "live_text": bool((result.get("font_check") or {}).get("live_text")),
         "page_count": result.get("page_count") or 1,
+        "page_number": result.get("page_number") or 1,
         "stitch_count": None,
         "thread_colors": None,
     }
@@ -382,7 +383,7 @@ def evaluate(facts, method_key, location_key=None, print_width=None):
         warns.append("Fonts are not outlined — see the Font Check.")
         asks.append("the file with all text converted to outlines")
     if (facts.get("page_count") or 1) > 1:
-        notes.append(f"Only page 1 of {facts['page_count']} was screened.")
+        notes.append(f"Only page {facts.get('page_number') or 1} of {facts['page_count']} was screened.")
     if method["min_qty"] > 1:
         notes.append(f"Minimum order: {method['min_qty']} pieces.")
 
