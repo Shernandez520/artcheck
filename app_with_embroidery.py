@@ -2464,6 +2464,18 @@ def build_artbot_system_prompt():
     if ctx.get('page_count') and ctx['page_count'] > 1:
         lines.append(f"Pages/artboards in file: {ctx['page_count']} (ArtCheck previewed and analyzed page {ctx.get('page_number') or 1} only)")
 
+    # Vector files: what the converted PDF contains (paths vs embedded pictures)
+    _pdf = ctx.get('pdf_export')
+    if isinstance(_pdf, dict) and _pdf.get('ok'):
+        if _pdf.get('images'):
+            lines.append(f"Vector vs raster content: PARTLY RASTER. The file contains {_pdf['images']} embedded raster "
+                         f"image(s) alongside {_pdf.get('paths', 0)} vector path(s). ArtCheck can count the raster images "
+                         "but cannot tell which visual elements they are or what resolution they have; photo-like, "
+                         "shaded or textured areas are the usual suspects. Embedded rasters do not scale like vector "
+                         "art and cannot be color-separated for spot-color screen printing.")
+        else:
+            lines.append(f"Vector vs raster content: fully vector ({_pdf.get('paths', 0)} path(s), no embedded raster images).")
+
     # Raster-specific
     if ctx.get('dpi'):
         lines.append(f"DPI (metadata): {ctx['dpi']}")
@@ -2554,7 +2566,11 @@ def _artbot_sidebar_body():
 
     # Handle pending question (from example buttons or send)
     def _run_artbot(question):
-        st.session_state.artbot_history.append({"role": "user", "content": question})
+        # The question may already be in the history: this is a second attempt
+        # after the first one was cut off (see the note where this is called)
+        _history = st.session_state.artbot_history
+        if not (_history and _history[-1] == {"role": "user", "content": question}):
+            _history.append({"role": "user", "content": question})
         # Test hook: the automated tests have no API key. When this variable points
         # at a file, its text is used as the answer and the API is not called.
         # It is never set in production.
@@ -2571,7 +2587,8 @@ def _artbot_sidebar_body():
                     api_key = st.secrets.get("ANTHROPIC_API_KEY")
                 except Exception:
                     pass
-            client = anthropic.Anthropic(api_key=api_key)
+            # Without a timeout a stalled connection waits 10 minutes with no message
+            client = anthropic.Anthropic(api_key=api_key, timeout=60.0, max_retries=1)
             full_response = ""
             max_retries = 3
             for attempt in range(max_retries):
@@ -2592,16 +2609,25 @@ def _artbot_sidebar_body():
                         full_response = ""
                         continue
                     raise retry_err
-            st.session_state.artbot_history.append({"role": "assistant", "content": full_response})
+            if not full_response.strip():
+                full_response = "⚠️ ArtBot returned an empty answer. Please ask again."
+            # Only answer a question that is still waiting (never two answers to one question)
+            if st.session_state.artbot_history and st.session_state.artbot_history[-1].get("role") == "user":
+                st.session_state.artbot_history.append({"role": "assistant", "content": full_response})
         except Exception as e:
             st.session_state.artbot_history.append({"role": "assistant", "content": f"⚠️ Error: {str(e)}"})
 
     if st.session_state.artbot_pending:
+        # The question stays pending until its answer is stored. Streamlit stops a
+        # run the moment the user clicks anything else (or the browser reconnects),
+        # and that used to leave the question in the chat with no answer and no
+        # error. Now the next run simply asks again.
         q = st.session_state.artbot_pending
-        st.session_state.artbot_pending = None
         st.session_state.artbot_input_value = ""
         with st.spinner("🤖 ArtBot is thinking..."):
             _run_artbot(q)
+        if st.session_state.artbot_pending == q:
+            st.session_state.artbot_pending = None
         st.rerun()
 
     # Chat history label
@@ -2640,6 +2666,7 @@ def _artbot_sidebar_body():
     if st.session_state.artbot_history:
         if st.button("🔄 Clear conversation", use_container_width=True):
             st.session_state.artbot_history = []
+            st.session_state.artbot_pending = None
             st.session_state.artbot_input_key += 1
             st.rerun()
 
@@ -3178,6 +3205,7 @@ if uploaded_file:
                 'page_count': result.get('page_count'),
                 'page_number': result.get('page_number'),
                 'font_check': result.get('font_check'),
+                'pdf_export': result.get('pdf_export'),
                 'color_data': color_data,
                 'embroidery_info': result.get('embroidery_info'),
             }
