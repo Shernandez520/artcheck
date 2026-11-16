@@ -24,9 +24,9 @@ reach the art department.
 ## Supported File Types
 - Vector: .ai, .eps, .pdf, .svg, .cdr
 - Embroidery: .dst, .pes, .exp, .jef, .vp3, .xxx, .u01
-- Raster: .png, .jpg, .jpeg, .gif, .tiff, .bmp, .webp
-- Not supported: .indd and .xcf (GIMP). The uploader accepts them only so the
-  user gets export instructions instead of a silent rejection.
+- Raster: .png, .jpg, .jpeg, .gif, .tiff, .bmp, .webp, and GIMP .xcf (flattened)
+- Thumbnail only: .indd (the preview InDesign saves inside the file). Size,
+  colors and fonts cannot be checked; the page says so and asks for an export.
 
 ## Architecture
 
@@ -168,12 +168,46 @@ out as literal `#` and how a `<` could break the box. Test hook:
 instead of calling the API (used by the automated test; never set in production).
 
 **The sidebar is rendered LAST — do not move it back above the main area.**
-`render_artbot_sidebar()` is called before every `st.stop()` (InDesign, GIMP, both
+`render_artbot_sidebar()` is called before every `st.stop()` (InDesign, GIMP, all
 raster flows) and at the end of the script. ArtBot uses `st.rerun()`, and a rerun
 discards the state of every widget not yet rendered in that run. When the sidebar
 ran first, each ArtBot question made the file uploader forget its file (its X then
 cleared nothing) and reset the Decoration Method Check. Any new early `st.stop()`
 needs a `render_artbot_sidebar()` call in front of it.
+
+### GIMP (.xcf) — `xcf_tools.py`
+Pure Python + Pillow (+ numpy, which Streamlit already installs). `flatten(data)`
+returns the RGBA picture GIMP would show plus `layers`, `hidden`, `dpi`, `bits`
+and `approximate` (blend modes drawn as Normal; the page lists them).
+`flatten_gimp_upload()` in the app turns that into a full-size PNG, a ≤1600 px
+display copy and a normal `RasterAnalyzer` result, cached in
+`st.session_state['_xcf_flat']`; the page then runs the ordinary raster flow
+(print sizes, Decoration Method Check, Mockup Builder, ArtBot context) plus a PNG
+download. Unreadable files get the export instructions.
+- Do NOT swap in the `gimpformats` package: it peaked near 700 MB on a
+  1920 × 1080 file (this reader: about 130 MB) and pulls a newer Pillow.
+- Legacy layer modes (< 23) are mixed in gamma space with Pillow. GIMP 2.10 modes
+  go through `_linear_draw()`; `_NEW_MODE_SPACES` says, per mode, whether the blend
+  and the mix happen in linear light. Those values were found by trying all four
+  combinations against GIMP's export; do not "tidy" them.
+- A group that is not pass-through is drawn from the picture of itself GIMP saves
+  in the file, and its children are skipped. Pass-through groups draw their
+  children directly. Top-level layers have no item path in the file.
+- `MAX_PIXELS` (24 MP) is a memory limit, about 17 bytes per pixel at peak.
+- `tests/data/xcf/*.xcf` were saved by GIMP 2.10.36 from generated shapes
+  (`make_samples.scm`), each with the PNG GIMP exported (`*.gimp.png`);
+  `tests/test_xcf_tools.py` requires a match. Linear-precision images are exported
+  by GIMP as linear PNGs, so the test converts that reference before comparing.
+  Also verified by hand on two real projects (5 and 43 layers): max difference 1.
+
+### InDesign (.indd) — `indd_tools.py`
+`thumbnail(data)` returns the first-page JPEG from the document's XMP
+(`xmpGImg:image`), with the app name and save date. An .indd holds an XMP packet
+for every placed image (those have thumbnails too) and several old saves of its
+own, so only packets whose CreatorTool is InDesign count, newest first, falling
+back when a preview does not decode (long packets are stored in pieces). The
+base64 uses `&#xA;` line breaks. Verified by hand on three real documents; CI
+uses `make_fixtures.fake_indd()`, which lays packets out the same way.
 
 ### Clearing a file
 `_clear_file_state()` is the single place that forgets a file. It is used by both
@@ -229,12 +263,13 @@ after every deploy — upload is the core feature.
 ### Automated browser test (runs on every pull request)
 `.github/workflows/tests.yml` builds the production Docker image, starts the app
 with a 1 GB memory limit, and runs `tests/e2e_test.py` (Playwright) against it:
-PDF, EPS, SVG, DST, PNG, raster-in-PDF, .indd, file switching, Mockup Builder
+PDF, EPS, SVG, DST, PNG, raster-in-PDF, .indd, .xcf, file switching, Mockup Builder
 handoff, render cap, Auto background, sizes, multi-page notice, Font Check,
 Decoration Method Check, vector PDF export (the downloaded PDF is opened and
 checked for paths, images, page size and spot colors). `tests/test_decoration_rules.py` unit-tests the rules. It also fails if temp files are left in
 `/tmp` or the container is OOM-killed. Sample files come from
-`tests/make_fixtures.py` — no real artwork in the repo. GA requests are blocked.
+`tests/make_fixtures.py` — no real artwork in the repo (the only binary samples
+are the generated-shape GIMP files in `tests/data/xcf`). GA requests are blocked.
 - Work on a branch and open a PR; merge only when the check is green.
 - When a change intentionally alters something the test asserts (sizes, labels,
   render cap), update `tests/e2e_test.py` in the same PR.
