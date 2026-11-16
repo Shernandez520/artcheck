@@ -39,6 +39,61 @@ def white_logo_pdf(path):
     c.save()
 
 
+def make_sample_art(path):
+    """The built-in "Try a sample file" logo (static/sample_logo.ai in the app).
+
+    An invented company, drawn by code: two Pantone spot colors and one line of
+    live text in a font that is not embedded, so the sample shows the color
+    analysis, the Font Check warning and the vector PDF download. Like a real
+    Illustrator file it is a PDF under an .ai name. Regenerate with:
+        python -c "import sys; sys.path.insert(0, 'tests'); import make_fixtures as m; m.make_sample_art('static/sample_logo.ai')"
+    """
+    from reportlab.lib.colors import CMYKColorSep, white
+    inch = 72
+    navy = CMYKColorSep(1.0, 0.76, 0.12, 0.70, spotName="PANTONE 289 C")
+    gold = CMYKColorSep(0.0, 0.31, 0.98, 0.0, spotName="PANTONE 1235 C")
+    w, h = 4 * inch, 2.5 * inch
+    c = canvas.Canvas(str(path), pagesize=(w, h), pageCompression=0)
+    c.setTitle("Sample logo")
+    c.setFillColor(navy)
+    c.roundRect(0.25 * inch, 0.25 * inch, w - 0.5 * inch, h - 0.5 * inch, 0.22 * inch, stroke=0, fill=1)
+    # sun
+    cx, cy = 1.05 * inch, 1.25 * inch
+    c.setFillColor(gold)
+    c.circle(cx, cy, 0.36 * inch, stroke=0, fill=1)
+    import math
+    for i in range(12):
+        a = math.radians(i * 30)
+        p = c.beginPath()
+        p.moveTo(cx + 0.44 * inch * math.cos(a - 0.09), cy + 0.44 * inch * math.sin(a - 0.09))
+        p.lineTo(cx + 0.62 * inch * math.cos(a), cy + 0.62 * inch * math.sin(a))
+        p.lineTo(cx + 0.44 * inch * math.cos(a + 0.09), cy + 0.44 * inch * math.sin(a + 0.09))
+        p.close()
+        c.drawPath(p, stroke=0, fill=1)
+    # two waves under the name
+    for row, y in enumerate((0.98 * inch, 0.84 * inch)):
+        p = c.beginPath()
+        x = 1.75 * inch
+        p.moveTo(x, y)
+        for _ in range(4):
+            p.curveTo(x + 0.11 * inch, y + 0.09 * inch, x + 0.30 * inch, y - 0.09 * inch, x + 0.41 * inch, y)
+            x += 0.41 * inch
+        p.lineTo(x, y - 0.045 * inch)
+        for _ in range(4):
+            p.curveTo(x - 0.11 * inch, y - 0.135 * inch, x - 0.30 * inch, y + 0.045 * inch, x - 0.41 * inch, y - 0.045 * inch)
+            x -= 0.41 * inch
+        p.close()
+        c.drawPath(p, stroke=0, fill=1)
+    # live text, standard font, not embedded
+    c.setFillColor(white)
+    c.setFont("Helvetica-Bold", 21)
+    c.drawString(1.75 * inch, 1.50 * inch, "SUNHAVEN")
+    c.setFillColor(gold)
+    c.setFont("Helvetica", 9)
+    c.drawString(1.76 * inch, 1.26 * inch, "OUTFITTERS  \u2022  EST. 2009")
+    c.save()
+
+
 INDD_MAGIC = bytes.fromhex("0606edf5d81d46e5bd31efe7fe74b71d")
 
 
@@ -306,6 +361,17 @@ def main(out_dir):
         pattern.add_stitch_absolute(pyembroidery.STITCH, (i % 20) * 10, (i // 20) * 10)
     pattern.end()
     pyembroidery.write_dst(pattern, str(out / "stitch.dst"))
+
+    # Vector logo with a photo placed in it: vector by format, not all vector
+    from reportlab.lib.utils import ImageReader
+    photo = Image.new("RGB", (120, 90))
+    photo.putdata([((x * 2) % 256, (y * 3) % 256, 140) for y in range(90) for x in range(120)])
+    c = canvas.Canvas(str(out / "logo_with_photo.pdf"), pagesize=(3 * 72, 2 * 72))
+    c.setFillColor(CMYKColor(0, 1, 1, 0))
+    for i in range(6):
+        c.rect(12 + i * 16, 100, 10, 30, stroke=0, fill=1)
+    c.drawImage(ImageReader(photo), 110, 20, width=90, height=67)
+    c.save()
 
     # InDesign: one file with the page thumbnail InDesign normally saves, one without
     (out / "layout.indd").write_bytes(fake_indd())

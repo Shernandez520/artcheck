@@ -71,6 +71,16 @@ def convert_eps_to_pdf(input_file):
     return pdf_bytes
 
 
+def mixed_label(label, image_count):
+    """'Vector (EPS)' -> 'Vector + raster (EPS)' when the file also holds pictures.
+    A file can be vector by format and still carry raster images; the label should
+    not promise more than the file delivers. (Never use the words "embedded raster"
+    here: that label means the file is ONLY a picture and switches the rules.)"""
+    if image_count and label.startswith('Vector ('):
+        return 'Vector + raster (' + label[len('Vector ('):]
+    return label
+
+
 def effective_suffix(filename, data):
     """The file type to process an upload as.
 
@@ -905,19 +915,30 @@ class PreviewGenerator:
             st.warning(f"CDR conversion failed: {str(e)}")
             return False
 
+    def _pdf_image_count(self, input_file):
+        """How many raster images sit on page 1 of a PDF / PDF-based .ai."""
+        try:
+            import fitz
+            doc = fitz.open(input_file, filetype="pdf")
+            count = len(doc[0].get_images()) if doc.page_count else 0
+            doc.close()
+            return count
+        except Exception:
+            return 0
+
     def _detect_file_type_label(self, input_file, ext):
         """Return accurate file type label"""
         if ext == '.svg' and self._svg_has_embedded_raster(input_file):
             return 'SVG (embedded raster)'
         elif ext == '.eps':
-            return 'Vector (EPS)'
+            return 'Vector (EPS)'          # "+ raster" is added after the PDF check, see mixed_label()
         elif ext == '.ai':
-            return 'Vector (AI)'
+            return mixed_label('Vector (AI)', self._pdf_image_count(input_file))
         elif ext == '.pdf':
             is_raster, img_count = self._pdf_has_only_raster(input_file)
             if is_raster:
                 return 'PDF (embedded raster)'
-            return 'Vector (PDF)'
+            return mixed_label('Vector (PDF)', self._pdf_image_count(input_file))
         return 'Vector'
 
     def generate_preview(self, input_file, bg_type='auto'):
@@ -1361,14 +1382,20 @@ class ColorExtractor:
             try:
                 import re
                 doc2 = fitz.open(input_file)
-                for xref in range(1, doc2.xref_count()):
+                # (this loop used to call doc2.xref_count(), which does not exist, so it
+                # never ran and spot colors were only found by the raw PANTONE scan below)
+                def _pdf_name(text):
+                    # PDF names write a space as #20: /PANTONE#20289#20C
+                    return re.sub(r'#([0-9A-Fa-f]{2})', lambda m: chr(int(m.group(1), 16)), text)
+                for xref in range(1, doc2.xref_length()):
                     try:
                         obj_str = doc2.xref_object(xref)
-                        if not obj_str:
+                        if not obj_str or ('Separation' not in obj_str and 'PANTONE' not in obj_str):
                             continue
+                        obj_str = _pdf_name(obj_str)
                         # /Separation colorspace with name
                         sep_paren = re.findall(r'/Separation\s*\(([^)]+)\)', obj_str)
-                        sep_slash = re.findall(r'/Separation\s*/([^\s/\[\]<>()]+)', obj_str)
+                        sep_slash = re.findall(r'/Separation\s*/([^/\[\]<>()\n]+?)\s*(?=/|\[|\d+ \d+ R)', obj_str)
                         for name in sep_paren + sep_slash:
                             name = name.strip()
                             if name and name not in ('All', 'None', 'Black', 'White', 'Cyan', 'Magenta', 'Yellow'):
@@ -1376,6 +1403,7 @@ class ColorExtractor:
                         # Also catch PANTONE anywhere in obj string
                         pantone_hits = re.findall(r'(PANTONE[^/\(\)\[\]<>\n]{1,40})', obj_str)
                         for ph in pantone_hits:
+                            ph = re.sub(r'\s+\d+\s+\d+\s+R\b.*$', '', ph)     # "/PANTONE 289 C 3 0 R" in a resource list
                             ph = ph.strip().strip('"-\'')
                             if ph and ph not in spot_colors:
                                 spot_colors[ph] = {'label': ph, 'type': 'spot'}
@@ -2639,6 +2667,15 @@ def _artbot_sidebar_body():
     _chat_components.html(artbot_chat_page(st.session_state.artbot_history), height=466, scrolling=False)
     st.markdown('<div style="font-size:0.75rem;color:#555;margin-bottom:6px;padding-left:2px;">✏️ Type your question below</div>', unsafe_allow_html=True)
 
+    # Input + send button — form allows Enter key to submit
+    with st.form(key=f"artbot_form_{st.session_state.artbot_input_key}", clear_on_submit=True):
+        q_col, btn_col = st.columns([5, 1])
+        with q_col:
+            question_input = st.text_input("q", placeholder="Ask anything...",
+                label_visibility="collapsed")
+        with btn_col:
+            send = st.form_submit_button("➤", use_container_width=True, type="primary")
+
     # Example question chips — only show when no history
     if not st.session_state.artbot_history:
         st.caption("💡 Try one of these:")
@@ -2653,15 +2690,6 @@ def _artbot_sidebar_body():
             if st.button(ex, use_container_width=True, key=f"ex_{ex}"):
                 st.session_state.artbot_pending = ex
                 st.rerun()
-
-    # Input + send button — form allows Enter key to submit
-    with st.form(key=f"artbot_form_{st.session_state.artbot_input_key}", clear_on_submit=True):
-        q_col, btn_col = st.columns([5, 1])
-        with q_col:
-            question_input = st.text_input("q", placeholder="Ask anything...",
-                label_visibility="collapsed")
-        with btn_col:
-            send = st.form_submit_button("➤", use_container_width=True, type="primary")
 
     if st.session_state.artbot_history:
         if st.button("🔄 Clear conversation", use_container_width=True):
@@ -2736,7 +2764,8 @@ def _clear_file_state():
     file context, Mockup Builder handoff and raster-in-PDF caches."""
     for _key in ('preview_image_bytes', 'preview_result', 'preview_color_data', 'preview_filename',
                  'preview_download_bytes', 'preview_pdf_bytes', 'preview_alpha_bytes', 'preview_image_bg',
-                 '_page_autogen_attempt', 'artbot_file_context', '_raster_analysis', '_pdf_probe', '_xcf_flat'):
+                 '_page_autogen_attempt', 'artbot_file_context', '_raster_analysis', '_pdf_probe', '_xcf_flat',
+                 '_sample_active', '_sample_autogen'):
         st.session_state.pop(_key, None)
     _old_token = st.session_state.pop('mockup_handoff_token', None)
     if _old_token:
@@ -2754,6 +2783,23 @@ def _on_uploader_change(uploader_key):
         _clear_file_state()
 
 
+SAMPLE_FILE = Path(__file__).parent / "static" / "sample_logo.ai"
+
+
+class _SampleUpload:
+    """The built-in sample logo, shaped like an uploaded file so the normal flow
+    runs on it unchanged. The art is generated by tests/make_fixtures.make_sample_art()."""
+    name = "sample_logo.ai"
+    file_id = "sample"
+
+    def __init__(self):
+        self._data = SAMPLE_FILE.read_bytes()
+        self.size = len(self._data)
+
+    def getvalue(self):
+        return self._data
+
+
 _uploader_key = f"uploader_{st.session_state.get('file_uploader_key', 0)}"
 uploaded_file = st.file_uploader(
     "🎨 Drag and drop your file here or click to browse",
@@ -2766,6 +2812,20 @@ uploaded_file = st.file_uploader(
     args=(_uploader_key,),
 )
 st.caption("GIMP (.xcf) files are flattened to one image. InDesign (.indd) files show a small thumbnail only.")
+
+# No file handy? One click loads a built-in logo and runs the whole check on it.
+if uploaded_file:
+    st.session_state.pop('_sample_active', None)       # a real upload replaces the sample
+    st.session_state.pop('_sample_autogen', None)
+elif st.session_state.get('_sample_active') and SAMPLE_FILE.exists():
+    uploaded_file = _SampleUpload()
+elif SAMPLE_FILE.exists():
+    if st.button("✨ No file handy? Try a sample logo", key="try_sample_button",
+                 help="Loads a small made-up logo so you can see the preview, colors, font check and decoration check."):
+        _clear_file_state()
+        st.session_state['_sample_active'] = True
+        st.session_state['_sample_autogen'] = True
+        st.rerun()
 
 if uploaded_file:
     # Drop raster-in-PDF caches that belong to any previously uploaded file
@@ -2853,7 +2913,10 @@ if uploaded_file:
 
     col_succ, col_clear = st.columns([4, 1])
     with col_succ:
-        st.success(f"✓ Uploaded: **{uploaded_file.name}** ({uploaded_file.size / 1024 / 1024:.2f} MB)")
+        if isinstance(uploaded_file, _SampleUpload):
+            st.success("✓ Sample loaded: **sample_logo.ai** — a made-up logo with two Pantone colors and live text")
+        else:
+            st.success(f"✓ Uploaded: **{uploaded_file.name}** ({uploaded_file.size / 1024 / 1024:.2f} MB)")
     with col_clear:
         if st.button("🔄 New File", use_container_width=True, help="Clear this file and upload a new one"):
             st.session_state['file_uploader_key'] = st.session_state.get('file_uploader_key', 0) + 1
@@ -3095,8 +3158,9 @@ if uploaded_file:
         and st.session_state.get('_page_autogen_attempt') != (_file_id, _page_index)
     )
 
-    # Generate Preview
-    if st.button("🚀 Generate Preview", use_container_width=True, type="primary") or _page_changed:
+    # Generate Preview (also runs by itself once, right after the sample is loaded)
+    _sample_go = bool(st.session_state.pop('_sample_autogen', False))
+    if st.button("🚀 Generate Preview", use_container_width=True, type="primary") or _page_changed or _sample_go:
         st.session_state['_page_autogen_attempt'] = (_file_id, _page_index)
         with st.spinner("Generating preview..."):
             with tempfile.NamedTemporaryFile(delete=False, suffix=_eff_suffix) as tmp_file:
@@ -3168,6 +3232,8 @@ if uploaded_file:
             _pdf_bytes = None
             if result and PdfConverter().can_convert(_eff_name):
                 _pdf_bytes, result['pdf_export'] = PdfConverter().convert(tmp_path)
+                if (result.get('pdf_export') or {}).get('ok') and result.get('file_type'):
+                    result['file_type'] = mixed_label(result['file_type'], result['pdf_export'].get('images'))
 
             for _tmp_file in (tmp_path, _page_path):
                 if _tmp_file and os.path.exists(_tmp_file):

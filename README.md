@@ -48,6 +48,9 @@ EPS, AI, SVG and CorelDRAW files can be downloaded as a PDF that is still vector
 ### Raster Suitability Check
 PNG/JPG uploads get a DPI analysis with usable print sizes at 300 and 200 DPI, a plain-English verdict (Production Ready / Marginal / Not Suitable), and exactly what to ask the customer for instead. Pictures hiding inside a PDF or SVG ("raster saved as vector") are detected and treated as what they are.
 
+### Try It Without a File
+No art file handy? **Try a sample logo** on the home page loads a small made-up logo (two Pantone colors, live text) and runs the whole check in one click.
+
 ### GIMP and InDesign Files
 GIMP (`.xcf`) files are opened directly: ArtCheck flattens the visible layers into one image — layer opacity, masks, groups and the common blend modes included — then runs the same suitability and decoration checks as any other image and offers the result as a PNG. InDesign (`.indd`) files can't be rendered without InDesign, so ArtCheck shows the small page preview InDesign saves inside the file, labelled as a thumbnail, along with what to ask the customer to export.
 
@@ -100,7 +103,6 @@ Files are processed in memory and discarded immediately. Nothing is stored, and 
 - [x] Instant background switching
 - [x] GIMP (.xcf) files opened and flattened; InDesign thumbnails
 - [ ] Batch processing
-- [ ] Shareable preview links
 - [ ] Team accounts & file history
 
 ## Why ArtCheck Exists

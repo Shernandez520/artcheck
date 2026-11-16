@@ -113,6 +113,16 @@ color is found those are listed and the mode is set to RGB (the DSC fallback
 would say CMYK, because that word is in Illustrator's boilerplate). More than
 24 distinct RGB colors means gradients: the 12 most used are listed with a note.
 
+PDF spot names: the xref scan decodes `#20` (PDF writes `/PANTONE#20289#20C`)
+and reads any `/Separation` name, Pantone or not. That scan called a method that
+does not exist until Nov 2026 and silently never ran; only files with a plain
+"PANTONE nnn" string somewhere were caught.
+
+**File Type label:** `mixed_label()` turns `Vector (EPS)` into
+`Vector + raster (EPS)` when the file also holds pictures (image count from the
+PDF check, or page 1 for PDF / AI). Never use the words "embedded raster" there:
+that label means picture-only and switches the decoration rules.
+
 **Key operators:** Illustrator AI/PDF uses `scn`; GS-converted EPS uses `k`;
 plain PostScript uses `setcmykcolor`/`setgray`.
 
@@ -231,6 +241,20 @@ own, so only packets whose CreatorTool is InDesign count, newest first, falling
 back when a preview does not decode (long packets are stored in pieces). The
 base64 uses `&#xA;` line breaks. Verified by hand on three real documents; CI
 uses `make_fixtures.fake_indd()`, which lays packets out the same way.
+
+### Sample file ("Try a sample logo")
+`static/sample_logo.ai` is drawn by `tests/make_fixtures.make_sample_art()` (an
+invented company; two Pantone spots, live Helvetica text, a PDF under an .ai
+name). The home page button sets `_sample_active` + `_sample_autogen`;
+`_SampleUpload` then stands in for the uploaded file (`name`, `size`, `file_id`,
+`getvalue()` are all the flow uses) and Generate runs once by itself. A real
+upload or `_clear_file_state()` ends sample mode.
+
+### Look
+`.streamlit/config.toml` sets `[theme] base = "dark"`. The custom boxes and the
+ArtBot chat are designed for dark; without the pin, visitors in light mode got
+pale text on white. In the sidebar the question box sits directly under the
+chat window, example questions below it.
 
 ### Clearing a file
 `_clear_file_state()` is the single place that forgets a file. It is used by both
