@@ -257,6 +257,24 @@ def main(out_dir):
         "%%EOF\n"
     )
 
+    # An .ai saved in Illustrator's PostScript form (as stock-art sites deliver them):
+    # EPS content under an .ai name, on a 63.89" x 27.78" artboard, which at 300 dpi
+    # would be a 160-megapixel render
+    (out / "postscript_form.ai").write_text(
+        "%!PS-Adobe-3.1 EPSF-3.0\n"
+        "%%Creator: Adobe Illustrator(R) 29.8\n"
+        "%%BoundingBox: 0 0 4600 2000\n"
+        "%%HiResBoundingBox: 0 0 4600 2000\n"
+        "%%DocumentProcessColors: Cyan Magenta Yellow Black\n"
+        "%%EndComments\n"
+        "0 1 1 0 setcmykcolor\n"
+        "400 300 3800 1400 rectfill\n"
+        "0 0 0 1 setcmykcolor\n"
+        "newpath 2300 1000 400 0 360 arc closepath fill\n"
+        "showpage\n"
+        "%%EOF\n"
+    )
+
     # 3" x 2" EPS with CMYK fills (rendered by Ghostscript in production)
     (out / "logo_3x2in.eps").write_text(
         "%!PS-Adobe-3.0 EPSF-3.0\n"

@@ -263,6 +263,26 @@ def check_eps(app):
     app.no_errors()
 
 
+def check_postscript_form_ai(app):
+    page = app.fresh()
+    app.upload_vector("postscript_form.ai")
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    expect("reads it as an EPS" in body, "no note that this .ai file is in PostScript (EPS) form")
+    app.generate()
+    m = metrics(page)
+    expect(m.get("Dimensions (px)") in ("3999 × 1739", "4000 × 1739"),
+           f"oversized EPS artwork rendered at {m.get('Dimensions (px)')} (render cap is 4000 px)")
+    expect(m.get("Size (inches)") == '63.89" x 27.78"', f"Size (inches) shows {m.get('Size (inches)')}")
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    expect("Could not convert" not in body, "a PostScript-form .ai file was not converted")
+    colors = body.split("Color Analysis", 1)[1]
+    expect("K:100%" in colors and "C:0% M:100% Y:100% K:0%" in colors, "colors were not read from the PostScript-form .ai")
+    facts = download_pdf(page)
+    expect(facts["images"] == 0 and facts["paths"] >= 2, f"PDF from a PostScript-form .ai is not vector: {facts['paths']} paths, {facts['images']} images")
+    expect(facts["size_in"] == (63.89, 27.78), f"PDF page is {facts['size_in']}")
+    app.no_errors()
+
+
 def check_eps_color_mode_from_header(app):
     """Illustrator EPS files say 'Separation' throughout their boilerplate. That is not a spot color."""
     page = app.fresh()
@@ -815,6 +835,7 @@ CHECKS = [
     ("Background buttons switch the preview instantly, without Generate Preview", check_instant_background),
     ("EPS preview, size and colors including pure black (Ghostscript)", check_eps),
     ("EPS color mode comes from the file's ink list, not the word 'Separation' (Ghostscript)", check_eps_color_mode_from_header),
+    (".ai saved in PostScript form is read as EPS, within the render cap (Ghostscript)", check_postscript_form_ai),
     ("Font Check flags live text in a PDF, with embedded / not embedded", check_fonts_pdf),
     ("Font Check flags live text in an SVG", check_fonts_svg),
     ("Font Check flags live text in an EPS (Ghostscript)", check_fonts_eps),
@@ -870,7 +891,7 @@ def main():
 
         for number, (name, check) in enumerate(CHECKS, 1):
             if check in (check_eps, check_fonts_eps, check_pdf_export_eps, check_pdf_export_eps_spot_color,
-                         check_eps_color_mode_from_header) and skip_eps:
+                         check_eps_color_mode_from_header, check_postscript_form_ai) and skip_eps:
                 RESULTS.append((name, None, "skipped (SKIP_EPS=1)"))
                 continue
             try:
