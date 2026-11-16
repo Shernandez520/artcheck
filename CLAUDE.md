@@ -35,7 +35,9 @@ EPS: Ghostscript (`pngalpha`, 300 DPI, `-dEPSCrop`) → fitz fallback.
 PDF/AI: fitz (dynamic scale, alpha=True) → pdf2image fallback.
 SVG: detect embedded raster → fitz or CairoSVG.
 CDR: `convert_cdr()` → `cdr2xhtml` (libcdr) → `cdr_tools.svg_pages_from_libcdr()`
-→ CairoSVG PDF → rendered with fitz. cdr2xhtml prints an XHTML page with
+→ PDF (MuPDF's SVG reader via `fitz.open(filetype='svg').convert_to_pdf()`,
+about 5x faster than CairoSVG on big drawings and the same picture; CairoSVG is
+the fallback when that yields an empty page) → rendered with fitz. cdr2xhtml prints an XHTML page with
 `svg:`-prefixed drawings, NOT plain SVG; feeding it straight to CairoSVG fails
 ("SVG size is undefined") and fitz then lays it out as a tall HTML page. Page 1
 only; real page size comes from the converted PDF. One conversion per run is
@@ -57,6 +59,10 @@ size, colors, fonts) runs on that copy, so no analyzer needs a page argument.
 another page regenerates automatically (`_page_autogen_attempt` prevents a
 failing page from looping). The PDF download is always the whole file.
 CorelDRAW is still page 1 only.
+The pre-check does not open the PDF on every rerun: page count and the
+"is this page just a picture?" answer per page live in
+`st.session_state['_pdf_probe']` (`{id, pages, raster{page: bool}}`), and
+`_LazyPdf` opens the upload from memory only when an answer is missing.
 EPS and SVG have no pages at all: Illustrator saves every artboard into one EPS
 image (unless "Use Artboards" is ticked, which writes one file per artboard),
 and the artboard list is not readable from the EPS (its XMP says NPages 1; the
@@ -66,6 +72,9 @@ rest is in compressed private data). There is nothing to pick for those formats.
 Reads DPI from Pillow metadata, computes usable print sizes at 300/200 DPI,
 verdicts (Production Ready / Marginal / Not Suitable), flags 72 DPI as likely
 web graphics, recommends what to request from the customer.
+The raster flow analyzes an upload once and keeps the result in
+`st.session_state['_raster_analysis']` (`{id, analysis}`); later reruns (method
+picker, ArtBot) reuse it. The image itself is always shown from the uploader.
 
 ### ColorExtractor — reads color data BEFORE rasterization, never from rendered pixels
 **Display rules (critical):**
@@ -196,7 +205,17 @@ Railway's proxy drops idle WebSockets. Three layers:
 
 ### Memory notes (small instance)
 - Keep heavy imports (cairosvg, fitz, pdf2image) lazy — inside methods
-- `@st.cache_resource` on `PreviewGenerator`/`ColorExtractor` — do not remove
+- `get_preview_generator()` / `get_color_extractor()` build a fresh object per call
+  (they hold no state worth caching)
+
+### Speed notes (measured on a 35,000-path file)
+- Content streams of complex art are several MB. Find CMYK operators with
+  `ColorExtractor._cmyk_operands()` (operator first, then the four numbers before
+  it). A regex of "four numbers then `k`" costs over a second per pass.
+- PNGs are saved without `optimize=True` (3x slower for about 1% smaller).
+- `generate_preview()` with `'transparent_alpha'` must not call
+  `_apply_background()` — that re-encoded the full-size PNG for nothing.
+- Count paths with `page.get_cdrawings()`; `get_drawings()` is twice as slow.
 
 ## Dev Workflow
 ```bash

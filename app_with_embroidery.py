@@ -68,6 +68,32 @@ def convert_eps_to_pdf(input_file):
     return pdf_bytes
 
 
+class _LazyPdf:
+    """An uploaded PDF / AI that is only opened if something actually needs it.
+
+    The page count and "is this page just a picture?" answers are remembered in
+    session state, so on most clicks the file is never opened at all.
+    """
+
+    def __init__(self, uploaded):
+        self._uploaded = uploaded
+        self._doc = None
+
+    def doc(self):
+        if self._doc is None:
+            import fitz
+            self._doc = fitz.open(stream=self._uploaded.getvalue(), filetype="pdf")
+        return self._doc
+
+    def close(self):
+        if self._doc is not None:
+            try:
+                self._doc.close()
+            except Exception:
+                pass
+            self._doc = None
+
+
 def extract_pdf_page(input_file, page_index):
     """Write ONE page of a PDF / AI file to a new temp file and return its path.
 
@@ -148,7 +174,7 @@ def compose_preview_bytes(alpha_png_bytes, bg_type):
     """PNG bytes of the stored transparent preview on the chosen background."""
     import io
     out = io.BytesIO()
-    compose_background(Image.open(io.BytesIO(alpha_png_bytes)), bg_type).save(out, format='PNG', optimize=True)
+    compose_background(Image.open(io.BytesIO(alpha_png_bytes)), bg_type).save(out, format='PNG')
     return out.getvalue()
 
 
@@ -172,12 +198,33 @@ def convert_cdr(input_file):
         if run.returncode == 0 and run.stdout:
             pages = cdr_tools.svg_pages_from_libcdr(run.stdout.decode("utf-8", errors="ignore"))
             if pages:
-                import cairosvg
                 import fitz
-                pdf_bytes = cairosvg.svg2pdf(bytestring=pages[0].encode("utf-8"))
-                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-                rect = doc[0].rect
-                doc.close()
+                svg_bytes = pages[0].encode("utf-8")
+                pdf_bytes, rect = None, None
+                # MuPDF's own SVG reader is about 5x faster than CairoSVG on large
+                # drawings and renders the same picture; CairoSVG is the fallback.
+                for convert in ("fitz", "cairosvg"):
+                    try:
+                        if convert == "fitz":
+                            svg_doc = fitz.open(stream=svg_bytes, filetype="svg")
+                            candidate = svg_doc.convert_to_pdf()
+                            svg_doc.close()
+                        else:
+                            import cairosvg
+                            candidate = cairosvg.svg2pdf(bytestring=svg_bytes)
+                        doc = fitz.open(stream=candidate, filetype="pdf")
+                        page = doc[0]
+                        # read_contents() is instant; listing 35,000 paths just to
+                        # confirm the page is not empty took most of a second
+                        usable = (page.rect.width > 0 and page.rect.height > 0
+                                  and len(page.read_contents().strip()) > 0)
+                        if usable:
+                            pdf_bytes, rect = candidate, page.rect
+                        doc.close()
+                    except Exception:
+                        pass
+                    if pdf_bytes:
+                        break
                 if pdf_bytes and rect.width > 0 and rect.height > 0:
                     converted = {
                         'pdf': pdf_bytes,
@@ -302,19 +349,6 @@ if st.query_params.get("mockup"):
 # Custom CSS
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 3rem;
-        font-weight: bold;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0.5rem;
-    }
-    .tagline {
-        font-size: 1.2rem;
-        color: #666;
-        margin-bottom: 2rem;
-    }
     .success-box {
         padding: 1.5rem;
         border-radius: 0.5rem;
@@ -324,28 +358,6 @@ st.markdown("""
         color: #155724;
         font-size: 1.1rem;
         font-weight: bold;
-    }
-    .info-box {
-        padding: 1rem;
-        border-radius: 0.5rem;
-        background: #e3f2fd;
-        border-left: 4px solid #1976d2;
-        margin: 1rem 0;
-    }
-    .artbot-answer {
-        padding: 1.5rem;
-        border-radius: 0.5rem;
-        background: #f8f9fa;
-        border-left: 4px solid #667eea;
-        margin: 1rem 0;
-        font-size: 1rem;
-        line-height: 1.6;
-    }
-    .artbot-header {
-        color: #667eea;
-        font-weight: bold;
-        font-size: 1.1rem;
-        margin-bottom: 0.5rem;
     }
     section[data-testid="stSidebar"] * {
         font-size: 0.95rem !important;
@@ -405,6 +417,8 @@ DTG (Direct-to-Garment):
 - Tech: Full color, vector or raster. Raster needs at least 200 DPI at print size (300 DPI recommended). RGB preferred. White underbase on dark garments
 - Customer: "This prints like an inkjet printer directly on the shirt. Great for photos and complex designs, but works best on cotton and light colors."
 
+PHOTOSHOP FILES: Do not say Photoshop fonts are "already rasterized." A layered .psd can still contain live, editable text layers that need the font installed. Text is only locked in once the file is flattened or exported (PNG, JPG, TIFF, flattened PDF). For Photoshop art, tell the rep to ask for a flattened export at full resolution, or to rasterize the type layers first.
+
 CONSISTENCY WITH ARTCHECK: Specs vary by decorator. ArtCheck's Decoration Method Check uses Dubow Textile's published guidelines as a general guide. If the file context includes a decoration method check result, stay consistent with its numbers and verdict, and remind the rep to confirm specifics with their own decorator.
 
 CRITICAL: Frame technical issues as protecting the customer's brand quality, not as limitations.
@@ -430,68 +444,6 @@ AVOID:
 - Don't leave pricing ambiguous - give ranges or tell them to check with production
 
 Remember: You're not just answering technical questions - you're coaching sales reps through customer conversations. Give them confidence, scripts, and the reasoning to back it up."""
-
-def ask_artbot(question, conversation_history=None):
-    """
-    Call Claude API to answer production questions
-    
-    Args:
-        question: User's question
-        conversation_history: Optional list of previous messages for context
-    
-    Returns:
-        str: ArtBot's answer
-    """
-    try:
-        # Build messages array
-        messages = []
-        
-        # Add conversation history if exists
-        if conversation_history:
-            messages.extend(conversation_history)
-        
-        # Add current question
-        messages.append({
-            "role": "user",
-            "content": question
-        })
-        
-        # Note: In production Streamlit Cloud, you'd use st.secrets for the API key
-        # For now, this shows the structure - API key would come from environment
-        # The actual API call would happen here, but since we can't make external
-        # API calls in this demo, we'll return a helpful message
-        
-        # This is where the actual API call would be:
-        # client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
-        # response = client.messages.create(
-        #     model="claude-sonnet-4-6",
-        #     max_tokens=1000,
-        #     system=ARTBOT_SYSTEM_PROMPT,
-        #     messages=messages
-        # )
-        # return response.content[0].text
-        
-        # For demo purposes, return a template answer
-        return f"""I'm ArtBot, your production assistant! 🤖
-
-To activate me, you'll need to:
-1. Add your Anthropic API key to Streamlit secrets
-2. Install the `anthropic` package
-3. Uncomment the API call in the code
-
-Once set up, I can answer questions like:
-- "What file format do I need for screen printing?"
-- "How many colors can embroidery handle?"
-- "Why is my Pantone color wrong?"
-- "What DPI for a 2 inch logo?"
-
-Your question: "{question}"
-
-*This is a demo response. Configure API key to enable full functionality.*"""
-        
-    except Exception as e:
-        return f"⚠️ ArtBot error: {str(e)}\n\nPlease check your API configuration."
-
 
 # ============================================================================
 # ORIGINAL ARTCHECK CODE (Embroidery + Vector handling)
@@ -895,7 +847,8 @@ class PreviewGenerator:
             success, result = self.embroidery.convert_to_png(input_file, output_file)
             
             if success:
-                self._apply_background(output_file, bg_type)
+                if bg_type != 'transparent_alpha':   # nothing to add: skip a full decode + re-encode
+                    self._apply_background(output_file, bg_type)
                 img = Image.open(output_file)
                 return {
                     'image': output_file,
@@ -949,7 +902,8 @@ class PreviewGenerator:
             success = self._convert_cdr(input_file, output_file)
 
         if success and os.path.exists(output_file):
-            self._apply_background(output_file, bg_type)
+            if bg_type != 'transparent_alpha':   # nothing to add: skip a full decode + re-encode
+                self._apply_background(output_file, bg_type)
             img = Image.open(output_file)
             preview = {
                 'image': output_file,
@@ -1383,10 +1337,11 @@ class ColorExtractor:
                     # e.g. /CS0 cs 0 0 0 0.2 scn  or  0 0 0 0.4 scn
                     # Also handle standard 'k' operator for plain CMYK
 
-                    # Match: 0 0 0 K scn (grayscale CMYK via named CS)
-                    scn_k_hits = re.findall(r'0\s+0\s+0\s+([\d.]+)\s+scn', stream_text)
-                    for k_str in scn_k_hits:
-                        k = float(k_str)
+                    scn_hits = self._cmyk_operands(stream_text, 'scn')
+
+                    # 0 0 0 K scn (grayscale CMYK via named CS)
+                    for c, m, y, k in scn_hits:
+                        if c != 0 or m != 0 or y != 0: continue
                         if k <= 0 or k >= 1.0: continue
                         k_pct = round(k * 100)
                         label = f"K:{k_pct}% (Black {k_pct}%)"
@@ -1396,9 +1351,7 @@ class ColorExtractor:
                                                 'rgb': rgb_val, 'space': 'CMYK', 'opacity': 100}
 
                     # Full CMYK via scn: c m y k scn
-                    scn_cmyk_hits = re.findall(r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+scn', stream_text)
-                    for match in scn_cmyk_hits:
-                        c, m, y, k = [float(x) for x in match]
+                    for c, m, y, k in scn_hits:
                         if self._skip_stream_color(c, m, y, k, painted): continue
                         if c == 0 and m == 0 and y == 0:
                             k_pct = round(k * 100)
@@ -1411,9 +1364,7 @@ class ColorExtractor:
                                                 'rgb': rgb_val, 'space': 'CMYK', 'opacity': 100}
 
                     # Standard k operator fallback
-                    k_hits = re.findall(r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+k', stream_text)
-                    for match in k_hits:
-                        c, m, y, k = [float(x) for x in match]
+                    for c, m, y, k in self._cmyk_operands(stream_text, 'k'):
                         if self._skip_stream_color(c, m, y, k, painted): continue
                         if c == 0 and m == 0 and y == 0:
                             k_pct = round(k * 100)
@@ -1490,6 +1441,26 @@ class ColorExtractor:
         except Exception as e:
             results['warnings'].append(f"Color extraction error: {str(e)}")
             return results
+
+    def _cmyk_operands(self, stream, op):
+        """Every 'c m y k <op>' in a content stream as (c, m, y, k) floats, in order.
+
+        Finds the operator first and then reads the four numbers in front of it.
+        A single regex for "four numbers then the operator" took over a second per
+        operator on a 5 MB stream, because almost everything in a stream is a number.
+        """
+        import re
+        four_numbers = re.compile(r'([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+$')
+        found = []
+        for hit in re.finditer(r'(?<=\s)' + re.escape(op) + r'(?![A-Za-z0-9*])', stream):
+            numbers = four_numbers.search(stream[max(0, hit.start() - 120):hit.start()])
+            if not numbers:
+                continue
+            try:
+                found.append(tuple(float(x) for x in numbers.groups()))
+            except ValueError:
+                continue
+        return found
 
     def _painted_fill_colors(self, stream_text):
         """CMYK fill colors that are actually used to paint something on the page.
@@ -1608,12 +1579,8 @@ class ColorExtractor:
 
                 # Parse CMYK from decompressed stream (k and scn operators)
                 if not has_spots:
-                    for pat in [
-                        r'([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+k',
-                        r'([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+scn'
-                    ]:
-                        for match in re.findall(pat, stream):
-                            c, m, y, k = [float(x) for x in match]
+                    for op in ('k', 'scn'):
+                        for c, m, y, k in self._cmyk_operands(stream, op):
                             if self._skip_stream_color(c, m, y, k, painted): continue
                             if c == 0 and m == 0 and y == 0:
                                 k_pct = round(k * 100)
@@ -2046,7 +2013,7 @@ class PdfConverter:
         try:
             info['pages'] = doc.page_count
             for page in list(doc)[:5]:
-                info['paths'] += len(page.get_drawings())
+                info['paths'] += len(page.get_cdrawings())   # same list as get_drawings(), half the time
                 info['images'] += len(page.get_images())
                 if page.get_text().strip():
                     info['has_text'] = True
@@ -2621,8 +2588,7 @@ def _clear_file_state():
     file context, Mockup Builder handoff and raster-in-PDF caches."""
     for _key in ('preview_image_bytes', 'preview_result', 'preview_color_data', 'preview_filename',
                  'preview_download_bytes', 'preview_pdf_bytes', 'preview_alpha_bytes', 'preview_image_bg',
-                 '_page_autogen_attempt', 'artbot_file_context', '_raster_context_synced',
-                 '_raster_display_bytes', '_raster_analysis', '_raster_filename'):
+                 '_page_autogen_attempt', 'artbot_file_context', '_raster_analysis', '_pdf_probe'):
         st.session_state.pop(_key, None)
     _old_token = st.session_state.pop('mockup_handoff_token', None)
     if _old_token:
@@ -2674,10 +2640,7 @@ if uploaded_file:
         st.session_state.pop('preview_image_bg', None)
         st.session_state.pop('_page_autogen_attempt', None)
         st.session_state.pop('artbot_file_context', None)
-        st.session_state.pop('_raster_context_synced', None)
-        st.session_state.pop('_raster_display_bytes', None)
         st.session_state.pop('_raster_analysis', None)
-        st.session_state.pop('_raster_filename', None)
 
     # Check for InDesign files
     if uploaded_file.name.lower().endswith('.indd'):
@@ -2724,13 +2687,15 @@ if uploaded_file:
     _page_index = 0
     _page_total = 1
     if Path(uploaded_file.name).suffix.lower() in ['.pdf', '.ai']:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as _tmp:
-            _tmp.write(uploaded_file.getvalue())
-            _pdf_tmp_path = _tmp.name
+        _lazy_pdf = _LazyPdf(uploaded_file)
         try:
-            import fitz as _fitz
-            _doc = _fitz.open(_pdf_tmp_path)
-            _page_total = _doc.page_count or 1
+            _probe_id = f"{uploaded_file.name}|{uploaded_file.size}|{getattr(uploaded_file, 'file_id', '')}"
+            _probe = st.session_state.get('_pdf_probe')
+            if not isinstance(_probe, dict) or _probe.get('id') != _probe_id:
+                _probe = {'id': _probe_id, 'pages': None, 'raster': {}}
+            if _probe['pages'] is None:
+                _probe['pages'] = _lazy_pdf.doc().page_count or 1
+            _page_total = _probe['pages']
             if _page_total > 1:
                 _page_index = st.selectbox(
                     "Page", list(range(_page_total)),
@@ -2738,19 +2703,22 @@ if uploaded_file:
                     key=f"page_pick_{uploaded_file.name}_{uploaded_file.size}",
                     help="This file has more than one page (or artboard). Pick the one to preview and analyze.",
                 )
-            _page = _doc[_page_index]
-            _paths = _page.get_drawings()
-            _images = _page.get_images()
-            _is_raster_pdf = len(_images) > 0 and len(_paths) < 3
+            if _page_index not in _probe['raster']:
+                _probe_page = _lazy_pdf.doc()[_page_index]
+                _probe['raster'][_page_index] = (len(_probe_page.get_images()) > 0
+                                                 and len(_probe_page.get_drawings()) < 3)
+            st.session_state['_pdf_probe'] = _probe
+            _is_raster_pdf = _probe['raster'][_page_index]
             if _is_raster_pdf:
                 st.info("📷 Raster image detected inside PDF — analyzing for production suitability...")
                 # Extract and cache image bytes in session state so bg changes don't re-extract
                 _cache_key = f"raster_pdf_bytes_p{_page_index}_{uploaded_file.name}_{uploaded_file.size}"
                 if _cache_key not in st.session_state:
-                    _xref = _images[0][0]
+                    _doc = _lazy_pdf.doc()
+                    _xref = _doc[_page_index].get_images()[0][0]
                     _base_image = _doc.extract_image(_xref)
                     st.session_state[_cache_key] = (_base_image["image"], _base_image["ext"])
-                _doc.close()
+                _lazy_pdf.close()
                 _img_bytes, _img_ext = st.session_state[_cache_key]
                 # Save extracted image to temp file
                 _img_tmp = tempfile.mktemp(suffix=f'.{_img_ext}')
@@ -2797,7 +2765,6 @@ if uploaded_file:
                 _analysis = st.session_state[_analysis_key]
                 # Clean up
                 if os.path.exists(_img_tmp): os.unlink(_img_tmp)
-                if os.path.exists(_pdf_tmp_path): os.unlink(_pdf_tmp_path)
                 # Store ArtBot context
                 st.session_state['artbot_file_context'] = {
                     'filename': uploaded_file.name,
@@ -2818,37 +2785,36 @@ if uploaded_file:
                 _render_mockup_builder_button(_img_bytes, _filename_stem)
                 render_artbot_sidebar()
                 st.stop()
-            else:
-                _doc.close()
         except Exception:
             pass
         finally:
-            if os.path.exists(_pdf_tmp_path):
-                try: os.unlink(_pdf_tmp_path)
-                except: pass
+            _lazy_pdf.close()
 
     # Handle raster images separately
     raster_analyzer = RasterAnalyzer()
     if raster_analyzer.is_raster(uploaded_file.name):
         st.info("📷 Raster image detected — analyzing for production suitability...")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp_file:
-            tmp_file.write(uploaded_file.getvalue())
-            tmp_path = tmp_file.name
 
         # Show the image as preview
         st.image(uploaded_file, caption="Your Image", use_container_width=True)
 
-        # Run analysis
-        analysis = raster_analyzer.analyze(tmp_path)
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+        # Analyze once per uploaded file, not again on every click
+        _raster_id = f"{uploaded_file.name}|{uploaded_file.size}|{getattr(uploaded_file, 'file_id', '')}"
+        _cached_analysis = st.session_state.get('_raster_analysis')
+        if isinstance(_cached_analysis, dict) and _cached_analysis.get('id') == _raster_id:
+            analysis = _cached_analysis['analysis']
+        else:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp_file:
+                tmp_file.write(uploaded_file.getvalue())
+                tmp_path = tmp_file.name
+            try:
+                analysis = raster_analyzer.analyze(tmp_path)
+            finally:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+            st.session_state['_raster_analysis'] = {'id': _raster_id, 'analysis': analysis}
 
-        # Cache for re-display after ArtBot reruns (file uploader loses state on rerun)
-        st.session_state['_raster_display_bytes'] = uploaded_file.getvalue()
-        st.session_state['_raster_analysis'] = analysis
-        st.session_state['_raster_filename'] = uploaded_file.name
-
-        # Store context for ArtBot
+        # Store context for ArtBot (the sidebar is drawn after this, so it sees it straight away)
         st.session_state['artbot_file_context'] = {
             'filename': uploaded_file.name,
             'file_type': 'raster',
@@ -2870,12 +2836,6 @@ if uploaded_file:
             _filename_stem = uploaded_file.name.rsplit('.', 1)[0]
             _render_mockup_builder_button(uploaded_file.getvalue(), _filename_stem)
 
-        # Force a rerun so the sidebar picks up the newly-set artbot_file_context.
-        # Streamlit renders the sidebar before the main panel, so on first upload
-        # the sidebar misses the context. The flag prevents an infinite loop.
-        if not st.session_state.get('_raster_context_synced'):
-            st.session_state['_raster_context_synced'] = True
-            st.rerun()
         render_artbot_sidebar()
         st.stop()
 
@@ -2952,7 +2912,7 @@ if uploaded_file:
                     if _bbox:
                         _dl_img = _dl_img.crop(_bbox)
                     _dl_buf = _io.BytesIO()
-                    _dl_img.save(_dl_buf, format='PNG', optimize=True)
+                    _dl_img.save(_dl_buf, format='PNG')   # optimize=True was ~3x slower for ~1% smaller
                     _dl_bytes = _dl_buf.getvalue()
                 except Exception:
                     # Fall back to untrimmed bytes if anything goes wrong
@@ -2966,7 +2926,7 @@ if uploaded_file:
                     _ratio = _max / max(_small.width, _small.height)
                     _small = _small.resize((int(_small.width * _ratio), int(_small.height * _ratio)), Image.LANCZOS)
                 _alpha_buf = _io.BytesIO()
-                _small.save(_alpha_buf, format='PNG', optimize=True)
+                _small.save(_alpha_buf, format='PNG')
                 _alpha_bytes = _alpha_buf.getvalue()
 
             color_data = None
@@ -3024,18 +2984,6 @@ if uploaded_file:
                 'embroidery_info': result.get('embroidery_info'),
             }
         st.rerun()  # Rerun so session state block handles all rendering cleanly
-
-# Re-display raster image from cache when file uploader loses state after ArtBot reruns
-if not uploaded_file and st.session_state.get('_raster_display_bytes') and st.session_state.get('_raster_analysis'):
-    st.image(st.session_state['_raster_display_bytes'], caption="Your Image", use_container_width=True)
-    render_raster_results(st.session_state['_raster_analysis'], st.session_state.get('_raster_filename', ''))
-    render_decoration_check(
-        decoration_rules.facts_from_raster(st.session_state['_raster_analysis'], st.session_state.get('_raster_filename', '')),
-        st.session_state.get('_raster_filename', ''))
-    _rfn = st.session_state.get('_raster_filename', 'artwork')
-    if _rfn.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.tiff', '.tif', '.bmp', '.webp')):
-        st.markdown("---")
-        _render_mockup_builder_button(st.session_state['_raster_display_bytes'], _rfn.rsplit('.', 1)[0])
 
 # Render stored preview from session state (persists across ArtBot reruns)
 if st.session_state.get('preview_image_bytes') and st.session_state.get('preview_result'):
