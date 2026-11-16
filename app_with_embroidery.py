@@ -71,6 +71,21 @@ def convert_eps_to_pdf(input_file):
     return pdf_bytes
 
 
+def effective_suffix(filename, data):
+    """The file type to process an upload as.
+
+    Illustrator can save an .ai file in its older PostScript form (it starts with
+    "%!PS-Adobe ... EPSF", common for stock art) instead of the usual PDF form. Such
+    a file is an EPS in everything but name, so it goes down the EPS path.
+    """
+    suffix = Path(filename).suffix.lower()
+    if suffix == '.ai':
+        head = bytes(data[:64]).lstrip()
+        if head.startswith(b'%!PS') or head.startswith(b'\xc5\xd0\xd3\xc6'):
+            return '.eps'
+    return suffix
+
+
 def flatten_gimp_upload(data, upload_id):
     """Flatten a GIMP (.xcf) upload once: full-size PNG, a lighter copy to show, and
     the same analysis any other image gets. Returns {'id', 'error'} when it can't."""
@@ -743,13 +758,45 @@ class PreviewGenerator:
             st.warning(f"CairoSVG conversion failed: {str(e)}")
             return False
 
+    def _eps_render_dpi(self, input_file):
+        """300 dpi, or less when the artwork is so large that 300 dpi would pass
+        RENDER_MAX_PX (a 64" x 28" EPS is 160 million pixels at 300 dpi).
+        Returns (dpi, (width_pt, height_pt) or None)."""
+        import re
+        try:
+            with open(input_file, 'rb') as f:
+                head = f.read(65536)
+                f.seek(max(0, os.path.getsize(input_file) - 8192))
+                tail = f.read()
+            box = None
+            for chunk in (head, tail):
+                for key in (rb'%%HiResBoundingBox:', rb'%%BoundingBox:'):
+                    m = re.search(key + rb'\s*(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)', chunk)
+                    if m:
+                        x0, y0, x1, y1 = (float(v) for v in m.groups())
+                        if x1 > x0 and y1 > y0:
+                            box = (x1 - x0, y1 - y0)
+                            break
+                if box:
+                    break
+            if not box:
+                return 300, None
+            longest_px = max(box) / 72 * 300
+            if longest_px <= self.RENDER_MAX_PX:
+                return 300, box
+            return max(10, int(self.RENDER_MAX_PX * 72 / max(box) * 100) / 100), box
+        except Exception:
+            return 300, None
+
     def _convert_eps_with_ghostscript(self, input_file, output_file):
         """Convert EPS to PNG using Ghostscript"""
+        dpi, self._eps_box_pt = self._eps_render_dpi(input_file)
+        self._eps_dpi = dpi
         try:
             cmd = [
                 'gs', '-dNOPAUSE', '-dBATCH', '-dSAFER',
                 '-sDEVICE=pngalpha',
-                '-r300',
+                f'-r{dpi}',
                 '-dEPSCrop',
                 f'-sOutputFile={output_file}',
                 input_file
@@ -761,7 +808,7 @@ class PreviewGenerator:
             cmd2 = [
                 'gs', '-dNOPAUSE', '-dBATCH', '-dSAFER',
                 '-sDEVICE=pngalpha',
-                '-r300',
+                f'-r{dpi}',
                 f'-sOutputFile={output_file}',
                 input_file
             ]
@@ -953,6 +1000,11 @@ class PreviewGenerator:
                 if size_in:
                     preview['width_in'], preview['height_in'] = size_in
                 preview['page_count'] = self._pdf_page_count(input_file)
+            elif ext == '.eps' and getattr(self, '_eps_dpi', 300) != 300 and getattr(self, '_eps_box_pt', None):
+                # Rendered below 300 dpi to stay under the pixel cap, so pixels / 300
+                # would understate the size: report the artwork's own bounding box
+                preview['width_in'] = round(self._eps_box_pt[0] / 72, 2)
+                preview['height_in'] = round(self._eps_box_pt[1] / 72, 2)
             elif ext == '.svg':
                 size_in = self._svg_size_inches(input_file)
                 if size_in:
@@ -1629,6 +1681,39 @@ class ColorExtractor:
                                 fills[label] = {'label': label, 'hex': hex_val,
                                                'rgb': rgb_val, 'space': 'CMYK', 'opacity': 100}
 
+                # RGB artwork: Ghostscript keeps the file's own color space, so an RGB
+                # EPS arrives as 'r g b rg' fills. Without this an RGB file listed no
+                # colors at all and was labelled CMYK (the word is in Illustrator's
+                # boilerplate). Paper white is left out, as it is for CMYK.
+                rgb_total = 0
+                if not fills and not has_spots:
+                    rgb_uses = {}
+                    for r_s, g_s, b_s in re.findall(
+                            r'(?<![\d.])([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+rg(?![A-Za-z0-9*])', stream):
+                        try:
+                            r, g, b = float(r_s), float(g_s), float(b_s)
+                        except ValueError:
+                            continue
+                        if max(r, g, b) > 1 or (r >= 0.995 and g >= 0.995 and b >= 0.995):
+                            continue
+                        key = (round(r * 255), round(g * 255), round(b * 255))
+                        rgb_uses[key] = rgb_uses.get(key, 0) + 1
+                    rgb_total = len(rgb_uses)
+                    # Gradients and shading arrive as hundreds of one-off colors:
+                    # list the most used ones instead of all of them
+                    listed = sorted(rgb_uses, key=lambda c: -rgb_uses[c])[:12] if rgb_total > 24 else list(rgb_uses)
+                    for r8, g8, b8 in listed:
+                        label = f"R:{r8} G:{g8} B:{b8}"
+                        hex_val, rgb_val = self._rgb_to_hex(r8 / 255, g8 / 255, b8 / 255)
+                        fills[label] = {'label': label, 'hex': hex_val, 'rgb': rgb_val,
+                                        'space': 'RGB', 'opacity': 100}
+                    if fills:
+                        results['color_mode'] = 'RGB'
+                    if rgb_total > 24:
+                        results['warnings'].append(
+                            f"🎨 {rgb_total} different RGB colors found (gradients or shading): this is full-color "
+                            "artwork. The 12 most used colors are listed.")
+
                 results['fills'] = list(fills.values())
                 results['strokes'] = []
                 results['spot_colors'] = list(spot_colors.values())
@@ -1636,7 +1721,7 @@ class ColorExtractor:
                 if not fills and not spot_colors:
                     results['warnings'].append("Could not extract color data from this EPS file.")
                 total = len(fills) + len(spot_colors)
-                if total > 6:
+                if total > 6 and rgb_total <= 24:
                     results['warnings'].append(f"⚠️ {total} colors detected — in screen printing each color is a separate screen, so cost rises with every color")
                 return results
 
@@ -2791,7 +2876,14 @@ if uploaded_file:
     # page is only a picture (raster-in-PDF) before the normal vector flow
     _page_index = 0
     _page_total = 1
-    if Path(uploaded_file.name).suffix.lower() in ['.pdf', '.ai']:
+    # What to process the file as: an .ai saved in PostScript form is handled as EPS
+    _eff_suffix = effective_suffix(uploaded_file.name, uploaded_file.getvalue())
+    _eff_name = uploaded_file.name if _eff_suffix == Path(uploaded_file.name).suffix.lower() \
+        else uploaded_file.name.rsplit('.', 1)[0] + _eff_suffix
+    if _eff_name != uploaded_file.name:
+        st.caption("ℹ️ This .ai file is saved in Illustrator's PostScript (EPS) form, so ArtCheck reads it as an EPS: "
+                   "all artboards appear together in one image.")
+    if _eff_suffix in ['.pdf', '.ai']:
         _lazy_pdf = _LazyPdf(uploaded_file)
         try:
             _probe_id = f"{uploaded_file.name}|{uploaded_file.size}|{getattr(uploaded_file, 'file_id', '')}"
@@ -2980,7 +3072,7 @@ if uploaded_file:
     if st.button("🚀 Generate Preview", use_container_width=True, type="primary") or _page_changed:
         st.session_state['_page_autogen_attempt'] = (_file_id, _page_index)
         with st.spinner("Generating preview..."):
-            with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=_eff_suffix) as tmp_file:
                 tmp_file.write(uploaded_file.getvalue())
                 tmp_path = tmp_file.name
 
@@ -3035,7 +3127,7 @@ if uploaded_file:
                 _alpha_bytes = _alpha_buf.getvalue()
 
             color_data = None
-            file_ext = Path(uploaded_file.name).suffix.lower()
+            file_ext = _eff_suffix
             if file_ext in [".pdf", ".ai", ".eps", ".svg"]:
                 extractor = get_color_extractor()
                 color_data = extractor.extract(analysis_path)
@@ -3047,7 +3139,7 @@ if uploaded_file:
             # Vector PDF version of EPS / AI / SVG / CDR files (never built from the
             # preview image). Always the whole file, not just the page being viewed.
             _pdf_bytes = None
-            if result and PdfConverter().can_convert(uploaded_file.name):
+            if result and PdfConverter().can_convert(_eff_name):
                 _pdf_bytes, result['pdf_export'] = PdfConverter().convert(tmp_path)
 
             for _tmp_file in (tmp_path, _page_path):
@@ -3074,6 +3166,7 @@ if uploaded_file:
             st.session_state['preview_result'] = result
             st.session_state['preview_color_data'] = color_data
             st.session_state['preview_filename'] = uploaded_file.name
+            st.session_state['preview_effective_ext'] = _eff_suffix
             st.session_state['artbot_file_context'] = {
                 'filename': uploaded_file.name,
                 'file_type': result.get('file_type', 'unknown'),
@@ -3265,7 +3358,8 @@ Despite the file extension, this is not a true vector file. It's a raster image 
     render_font_check(result.get('font_check'))
     if color_data:
         stored_filename = st.session_state.get('preview_filename', '')
-        render_color_results(color_data, Path(stored_filename).suffix.lower())
+        render_color_results(color_data, st.session_state.get('preview_effective_ext')
+                             or Path(stored_filename).suffix.lower())
 
 # Footer
 st.markdown("---")

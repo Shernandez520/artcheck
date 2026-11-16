@@ -76,7 +76,7 @@ For the technically curious — this is not a thin wrapper around a converter:
 
 | Type | Formats |
 |------|---------|
-| Vector | .ai, .eps, .pdf, .svg, .cdr |
+| Vector | .ai (PDF-based and PostScript-based), .eps, .pdf, .svg, .cdr |
 | Embroidery | .dst, .pes, .exp, .jef, .vp3, .xxx, .u01 |
 | Raster | .png, .jpg, .gif, .tiff, .bmp, .webp, .xcf (GIMP, flattened) |
 | Thumbnail only | .indd (InDesign) |

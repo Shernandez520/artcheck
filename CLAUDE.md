@@ -31,7 +31,16 @@ reach the art department.
 ## Architecture
 
 ### PreviewGenerator
-EPS: Ghostscript (`pngalpha`, 300 DPI, `-dEPSCrop`) → fitz fallback.
+EPS: Ghostscript (`pngalpha`, `-dEPSCrop`) → fitz fallback. 300 DPI unless that
+would pass `RENDER_MAX_PX`: `_eps_render_dpi()` reads the bounding box and lowers
+the resolution (a 64" × 28" stock-art EPS was a 160-megapixel render), and the
+size in inches then comes from the bounding box instead of pixels / 300.
+**.ai saved in PostScript form:** Illustrator can write an .ai that starts with
+`%!PS-Adobe ... EPSF` instead of the usual PDF (stock-art sites deliver these).
+fitz cannot open it, which showed "Could not convert file". `effective_suffix()`
+sniffs the upload and the whole flow (temp file suffix, colors, fonts, PDF
+export, no page picker) treats it as `.eps`; `preview_effective_ext` keeps that
+for the stored results. Decide file type with `_eff_suffix`, not the file name.
 PDF/AI: fitz (dynamic scale, alpha=True) → pdf2image fallback.
 SVG: detect embedded raster → fitz or CairoSVG.
 CDR: `convert_cdr()` → `cdr2xhtml` (libcdr) → `cdr_tools.svg_pages_from_libcdr()`
@@ -98,6 +107,11 @@ The pdfwrite conversion comes from `convert_eps_to_pdf()`, which is cached for
 the run and shared by color analysis, the font check and the PDF download: an
 EPS costs two Ghostscript runs per Generate Preview (one pngalpha preview, one
 pdfwrite), not five. Don't add separate `gs` calls for EPS.
+
+RGB EPS files come out of pdfwrite as `r g b rg` fills. When no CMYK or spot
+color is found those are listed and the mode is set to RGB (the DSC fallback
+would say CMYK, because that word is in Illustrator's boilerplate). More than
+24 distinct RGB colors means gradients: the 12 most used are listed with a note.
 
 **Key operators:** Illustrator AI/PDF uses `scn`; GS-converted EPS uses `k`;
 plain PostScript uses `setcmykcolor`/`setgray`.
