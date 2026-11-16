@@ -345,6 +345,10 @@ def check_raster_png(app):
            "the print-size table still lists 150 dpi as usable")
     expect('4.5" × 3.0"' in body, "the 200 dpi size (4.5\" × 3.0\") is missing from the print-size table")
     expect("require CMYK" not in body, "the old 'most print methods require CMYK' warning is still shown")
+    # ArtBot is drawn after the analysis, so it knows the file without an extra page refresh
+    sidebar = page.locator('[data-testid="stSidebar"]').inner_text()
+    expect("I can see your file" in sidebar and "photo_900x600.png" in sidebar,
+           "ArtBot does not know about the image right after upload")
     app.no_errors()
 
 
