@@ -2195,10 +2195,16 @@ def artbot_chat_page(history):
     return """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 *{box-sizing:border-box;}
+html{color-scheme:dark;}
 html,body{margin:0;height:100%;background:transparent;}
 body{font-family:"Source Sans Pro",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   font-size:15px;line-height:1.5;color:#e0e0e0;}
-#box{height:100%;overflow-y:auto;padding:8px;border:2px solid #1e3a5f;border-radius:8px;background:#0d1117;}
+#box{height:100%;overflow-y:auto;padding:8px;border:2px solid #1e3a5f;border-radius:8px;background:#0d1117;
+  scrollbar-width:thin;scrollbar-color:#3d5a80 #0d1117;}
+/* Dark scrollbar: without this, browsers that always show scrollbars draw a white track */
+#box::-webkit-scrollbar{width:10px;}
+#box::-webkit-scrollbar-track{background:#0d1117;border-radius:8px;}
+#box::-webkit-scrollbar-thumb{background:#3d5a80;border-radius:6px;border:2px solid #0d1117;}
 .empty{color:#555;font-size:0.9rem;text-align:center;padding-top:40px;}
 .empty span{color:#444;font-size:0.85rem;}
 .msg{margin:4px 0;padding:6px 10px;overflow-wrap:anywhere;}
