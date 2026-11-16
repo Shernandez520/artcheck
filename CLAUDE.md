@@ -57,6 +57,10 @@ size, colors, fonts) runs on that copy, so no analyzer needs a page argument.
 another page regenerates automatically (`_page_autogen_attempt` prevents a
 failing page from looping). The PDF download is always the whole file.
 CorelDRAW is still page 1 only.
+EPS and SVG have no pages at all: Illustrator saves every artboard into one EPS
+image (unless "Use Artboards" is ticked, which writes one file per artboard),
+and the artboard list is not readable from the EPS (its XMP says NPages 1; the
+rest is in compressed private data). There is nothing to pick for those formats.
 
 ### RasterAnalyzer
 Reads DPI from Pillow metadata, computes usable print sizes at 300/200 DPI,
@@ -75,6 +79,12 @@ scan for `scn`/`k` operators → CMYK-from-stream overrides xref DeviceRGB artif
 
 **EPS pipeline:** GS `pdfwrite` → fitz content stream → parse `k`/`scn` →
 spot names from original EPS text (printable-ASCII filter for binary garbage).
+EPS color mode and spot names come from the file's own DSC header via
+`_eps_dsc_colors()` (`%%DocumentCustomColors`, `%%DocumentProcessColors`, with
+`%%+` continuation lines) when present. Never treat the bare word "Separation"
+as a spot color: it is in the boilerplate of every Illustrator EPS, and doing so
+labelled black-only files "Spot + CMYK". Files without those comments fall back
+to keyword detection (PANTONE names in parentheses).
 The pdfwrite conversion comes from `convert_eps_to_pdf()`, which is cached for
 the run and shared by color analysis, the font check and the PDF download: an
 EPS costs two Ghostscript runs per Generate Preview (one pngalpha preview, one

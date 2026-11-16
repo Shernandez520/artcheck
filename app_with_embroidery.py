@@ -1590,11 +1590,18 @@ class ColorExtractor:
                     with open(input_file, 'r', errors='ignore') as f:
                         eps_text = f.read()
                     import string
-                    for sp in re.findall(r'\(([^)]*(?:PANTONE|Pantone|PMS)[^)]*)\)', eps_text):
-                        sp = sp.strip()
-                        # Skip garbage binary matches - valid Pantone names are printable ASCII
-                        if sp and len(sp) < 50 and all(c in string.printable for c in sp):
-                            spot_colors[sp] = {'label': sp, 'type': 'spot'}
+                    declared = self._eps_dsc_colors(eps_text)['custom']
+                    if declared is not None:
+                        # The file states its spot colors (Pantone or custom-named): use exactly those
+                        for sp in declared:
+                            if all(c in string.printable for c in sp):
+                                spot_colors[sp] = {'label': sp, 'type': 'spot'}
+                    else:
+                        for sp in re.findall(r'\(([^)]*(?:PANTONE|Pantone|PMS)[^)]*)\)', eps_text):
+                            sp = sp.strip()
+                            # Skip garbage binary matches - valid Pantone names are printable ASCII
+                            if sp and len(sp) < 50 and all(c in string.printable for c in sp):
+                                spot_colors[sp] = {'label': sp, 'type': 'spot'}
                 except: pass
 
                 has_spots = bool(spot_colors)
@@ -1677,6 +1684,36 @@ class ColorExtractor:
         if has_rgb: return 'RGB'
         return 'Unknown'
 
+    def _eps_dsc_colors(self, text):
+        """Inks an EPS declares in its header comments (DSC).
+
+        %%DocumentCustomColors lists spot colors by name, one "(Name)" each, and
+        %%DocumentProcessColors lists the process inks (Cyan Magenta Yellow Black).
+        Both may continue on "%%+" lines. Returns {'custom': [...], 'process': [...]}
+        with None for a comment that is absent (or only says "(atend)").
+        """
+        import re
+        out = {'custom': None, 'process': None}
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            for key, field in (('%%DocumentCustomColors:', 'custom'), ('%%DocumentProcessColors:', 'process')):
+                if not line.startswith(key):
+                    continue
+                value = line[len(key):]
+                j = i + 1
+                while j < len(lines) and lines[j].startswith('%%+'):
+                    value += ' ' + lines[j][3:]
+                    j += 1
+                if '(atend)' in value:
+                    continue
+                if field == 'custom':
+                    names = [n.replace('\\(', '(').replace('\\)', ')').strip()
+                             for n in re.findall(r'\(((?:\\.|[^()\\])*)\)', value)]
+                    out['custom'] = [n for n in names if n and len(n) < 60]
+                else:
+                    out['process'] = [w for w in value.split() if w in ('Cyan', 'Magenta', 'Yellow', 'Black')]
+        return out
+
     def _detect_color_mode_eps(self, input_file):
         """Detect document color mode from EPS file"""
         has_spot = False
@@ -1686,8 +1723,18 @@ class ColorExtractor:
             import re
             with open(input_file, 'r', errors='ignore') as f:
                 full = f.read()
-            if re.search(r'PANTONE|Separation', full): has_spot = True
-            if re.search(r'setcmykcolor|DeviceCMYK|CMYKCustomColor', full): has_cmyk = True
+            # Illustrator (and any DSC-conforming EPS) declares its inks in the header.
+            # Trust that when present. The bare word "Separation" is NOT evidence of a
+            # spot color: it is in the boilerplate of every Illustrator EPS.
+            dsc = self._eps_dsc_colors(full)
+            if dsc['custom'] is not None:
+                has_spot = len(dsc['custom']) > 0
+            elif re.search(r'PANTONE', full):
+                has_spot = True
+            if dsc['process'] is not None:
+                has_cmyk = len(dsc['process']) > 0
+            elif re.search(r'setcmykcolor|DeviceCMYK|CMYKCustomColor', full):
+                has_cmyk = True
             if re.search(r'setrgbcolor|DeviceRGB', full): has_rgb = True
         except: pass
         if has_spot and has_cmyk: return 'Spot + CMYK'
@@ -2198,7 +2245,7 @@ def render_color_results(color_data, file_ext):
 
     # Fill colors
     if color_data.get('fills'):
-        st.markdown("**🩣 Fill Colors:**")
+        st.markdown("**🖌️ Fill Colors:**")
         for fill in color_data['fills']:
             hex_val = fill.get('hex', '#cccccc')
             opacity = fill.get('opacity', 100)
@@ -2318,7 +2365,7 @@ def build_artbot_system_prompt():
 
     lines = ["\n\n--- CURRENT FILE CONTEXT ---"]
     lines.append(f"The user has uploaded a file called '{ctx['filename']}' and ArtCheck has analyzed it.")
-    lines.append(f"File type: {ctx.get('file_type', 'unknown').title()}")
+    lines.append(f"File type: {ctx.get('file_type', 'unknown')}")
 
     if ctx.get('width') and ctx.get('height'):
         lines.append(f"Dimensions: {ctx['width']} × {ctx['height']} px")
@@ -3109,7 +3156,8 @@ function reset(){scale=fitScale;tx=0;ty=0;apply();}
             _kb = result['size_kb']
             st.metric("File Size", f"{_kb / 1024:.2f} MB" if _kb >= 1024 else f"{_kb} KB")
         if result.get('file_type'):
-            st.metric("File Type", result['file_type'].title())
+            _ft = result['file_type']
+            st.metric("File Type", _ft[:1].upper() + _ft[1:])
             if 'embedded raster' in result.get('file_type', '').lower():
                 st.warning("""
 ⚠️ **This file contains a raster image, not vector paths.**
