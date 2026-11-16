@@ -48,6 +48,9 @@ EPS, AI, SVG and CorelDRAW files can be downloaded as a PDF that is still vector
 ### Raster Suitability Check
 PNG/JPG uploads get a DPI analysis with usable print sizes at 300 and 200 DPI, a plain-English verdict (Production Ready / Marginal / Not Suitable), and exactly what to ask the customer for instead. Pictures hiding inside a PDF or SVG ("raster saved as vector") are detected and treated as what they are.
 
+### GIMP and InDesign Files
+GIMP (`.xcf`) files are opened directly: ArtCheck flattens the visible layers into one image — layer opacity, masks, groups and the common blend modes included — then runs the same suitability and decoration checks as any other image and offers the result as a PNG. InDesign (`.indd`) files can't be rendered without InDesign, so ArtCheck shows the small page preview InDesign saves inside the file, labelled as a thumbnail, along with what to ask the customer to export.
+
 ### ArtBot — AI Production Assistant
 A sidebar assistant with a senior-production-artist persona (powered by Claude). It sees your uploaded file's analysis — colors, fonts, size, and the decoration verdict — and answers questions like "what does 'fonts not outlined' mean?" — including word-for-word scripts reps can send to customers.
 
@@ -60,9 +63,11 @@ For the technically curious — this is not a thin wrapper around a converter:
 
 - **Rendering pipeline:** PyMuPDF for PDF/AI (dynamic scaling with a pixel cap, alpha-preserving), Ghostscript `pngalpha` for EPS, CairoSVG for SVG, libcdr for CorelDRAW, pyembroidery for stitch files — each with fallbacks
 - **Color extraction:** multi-stage pipeline reading `/Separation` colorspace definitions, decompressed content-stream `scn`/`k` operators, and raw PANTONE string scanning; a content-stream walk (fill color plus the graphics-state stack) separates colors that are painted from colors that are merely set; EPS goes through a Ghostscript→PDF→PyMuPDF conversion to reach parseable content streams
-- **Vector-preserving conversion:** Ghostscript `pdfwrite` for EPS, the embedded PDF for AI, CairoSVG's PDF surface for SVG and CorelDRAW; every output is re-opened and checked for paths, images and text before it is labelled vector
+- **Vector-preserving conversion:** Ghostscript `pdfwrite` for EPS, the embedded PDF for AI, CairoSVG's PDF surface for SVG, MuPDF's SVG reader for CorelDRAW; every output is re-opened and checked for paths, images and text before it is labelled vector
+- **A GIMP reader written for this app:** `xcf_tools.py` parses the XCF format itself (tiles, run-length and zlib compression, 8- to 64-bit samples, layer masks, groups) and mixes layers the way GIMP does — legacy modes in gamma space, GIMP 2.10 modes in linear light — in strips, so memory stays flat. The existing library for this needed about 700 MB for a 1920 × 1080 file; this one uses about 130 MB. It is tested against GIMP's own exports, to within one level per channel
+- **Tuned for heavy files:** a 35,000-shape CorelDRAW file went from 15 s to under 8 s by profiling each step (a faster SVG-to-PDF path, operator-anchored scanning of multi-megabyte content streams, no redundant PNG encodes); uploads are analyzed once and not again on every click
 - **Rules as data:** decoration rules live in a pure-Python module (`decoration_rules.py`) with no UI dependency, so they are unit-tested on their own
-- **Automated tests on every pull request:** GitHub Actions builds the production Docker image, starts the app under a 1 GB memory limit, and drives it in a headless browser — uploading generated PDF, EPS, AI, SVG, embroidery and raster files, downloading the converted PDFs and inspecting them, and checking the page for each feature. A merge to `main` deploys, so nothing merges without a green run.
+- **Automated tests on every pull request:** GitHub Actions builds the production Docker image, starts the app under a 1 GB memory limit, and drives it in a headless browser — uploading generated PDF, EPS, AI, SVG, GIMP, InDesign, embroidery and raster files, downloading the converted PDFs and inspecting them, and checking the page for each feature. A merge to `main` deploys, so nothing merges without a green run.
 - **Production hardening:** Dockerized on Railway, health-checked, WebSocket keepalive layered at three levels (Tornado server pings, client health pings, compression disabled) to survive proxy idle timeouts, memory-conscious lazy imports and resource caching for small-instance stability
 
 **Stack:** Python · Streamlit · PyMuPDF · Ghostscript · CairoSVG · libcdr · pyembroidery · Pillow · Anthropic Claude API · Playwright · GitHub Actions · Docker · Railway
@@ -73,9 +78,8 @@ For the technically curious — this is not a thin wrapper around a converter:
 |------|---------|
 | Vector | .ai, .eps, .pdf, .svg, .cdr |
 | Embroidery | .dst, .pes, .exp, .jef, .vp3, .xxx, .u01 |
-| Raster | .png, .jpg, .gif, .tiff, .bmp, .webp |
-
-InDesign (.indd) and GIMP (.xcf) files are not supported; uploading one shows how to export it.
+| Raster | .png, .jpg, .gif, .tiff, .bmp, .webp, .xcf (GIMP, flattened) |
+| Thumbnail only | .indd (InDesign) |
 
 ## Privacy
 
@@ -94,6 +98,7 @@ Files are processed in memory and discarded immediately. Nothing is stored, and 
 - [x] Automated browser tests on every pull request
 - [x] Page picker for multi-page PDF and Illustrator files
 - [x] Instant background switching
+- [x] GIMP (.xcf) files opened and flattened; InDesign thumbnails
 - [ ] Batch processing
 - [ ] Shareable preview links
 - [ ] Team accounts & file history

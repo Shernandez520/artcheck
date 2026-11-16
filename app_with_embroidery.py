@@ -30,7 +30,10 @@ import html
 import tempfile
 
 import decoration_rules  # pure-Python rules for the Decoration Method Check
+import io
 import cdr_tools         # pure-Python helpers for CorelDRAW conversion
+import xcf_tools         # pure-Python GIMP (.xcf) reader
+import indd_tools        # reads the thumbnail saved inside InDesign files
 
 # EPS -> PDF conversions made during this script run, keyed by file path. Color
 # analysis, the font check and the PDF download all need the same Ghostscript
@@ -66,6 +69,39 @@ def convert_eps_to_pdf(input_file):
                 pass
     _EPS_PDFS[input_file] = pdf_bytes
     return pdf_bytes
+
+
+def flatten_gimp_upload(data, upload_id):
+    """Flatten a GIMP (.xcf) upload once: full-size PNG, a lighter copy to show, and
+    the same analysis any other image gets. Returns {'id', 'error'} when it can't."""
+    try:
+        flat = xcf_tools.flatten(data)
+    except xcf_tools.XcfError as err:
+        return {'id': upload_id, 'error': str(err)}
+    except Exception:
+        return {'id': upload_id, 'error': "GIMP (.xcf) file could not be read."}
+    image = flat.pop('image')
+    dpi = flat.get('dpi') or (72.0, 72.0)
+    full = io.BytesIO()
+    image.save(full, format='PNG', dpi=dpi, compress_level=3)
+    png = full.getvalue()
+    shown = image
+    if max(image.size) > 1600:
+        shown = image.copy()
+        shown.thumbnail((1600, 1600), Image.LANCZOS)
+    small = io.BytesIO()
+    shown.save(small, format='PNG')
+    del image, shown
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
+        tmp.write(png)
+        tmp_path = tmp.name
+    try:
+        analysis = RasterAnalyzer().analyze(tmp_path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+    return {'id': upload_id, 'error': None, 'png': png, 'display': small.getvalue(),
+            'analysis': analysis, 'info': flat}
 
 
 class _LazyPdf:
@@ -2588,7 +2624,7 @@ def _clear_file_state():
     file context, Mockup Builder handoff and raster-in-PDF caches."""
     for _key in ('preview_image_bytes', 'preview_result', 'preview_color_data', 'preview_filename',
                  'preview_download_bytes', 'preview_pdf_bytes', 'preview_alpha_bytes', 'preview_image_bg',
-                 '_page_autogen_attempt', 'artbot_file_context', '_raster_analysis', '_pdf_probe'):
+                 '_page_autogen_attempt', 'artbot_file_context', '_raster_analysis', '_pdf_probe', '_xcf_flat'):
         st.session_state.pop(_key, None)
     _old_token = st.session_state.pop('mockup_handoff_token', None)
     if _old_token:
@@ -2613,11 +2649,11 @@ uploaded_file = st.file_uploader(
     type=['ai', 'eps', 'pdf', 'svg', 'cdr', 'xcf', 'indd', 'dst', 'pes', 'exp', 'jef', 'vp3', 'xxx', 'u01',
           'png', 'jpg', 'jpeg', 'gif', 'tiff', 'tif', 'bmp', 'webp'],
     help="Vector: .ai .eps .pdf .svg .cdr  •  Embroidery: .dst .pes .exp .jef .vp3 .xxx .u01  •  "
-         "Images: .png .jpg .gif .tiff .bmp .webp  •  Up to 50MB",
+         "Images: .png .jpg .gif .tiff .bmp .webp .xcf  •  Up to 50MB",
     on_change=_on_uploader_change,
     args=(_uploader_key,),
 )
-st.caption("XCF and INDD files are not currently supported.")
+st.caption("GIMP (.xcf) files are flattened to one image. InDesign (.indd) files show a small thumbnail only.")
 
 if uploaded_file:
     # Drop raster-in-PDF caches that belong to any previously uploaded file
@@ -2641,11 +2677,33 @@ if uploaded_file:
         st.session_state.pop('_page_autogen_attempt', None)
         st.session_state.pop('artbot_file_context', None)
         st.session_state.pop('_raster_analysis', None)
+        st.session_state.pop('_xcf_flat', None)
 
-    # Check for InDesign files
+    # InDesign: cannot be rendered without InDesign. Show the small page preview
+    # InDesign saves inside the file (when there is one) plus what to ask for.
     if uploaded_file.name.lower().endswith('.indd'):
-        st.error("### 📄 InDesign Files Not Supported")
-        st.warning("""
+        _indd_thumb = None
+        try:
+            _indd_thumb = indd_tools.thumbnail(uploaded_file.getvalue())
+        except Exception:
+            _indd_thumb = None
+        if _indd_thumb:
+            st.warning("### 📄 InDesign file: thumbnail only")
+            st.image(_indd_thumb['image'], width=min(512, _indd_thumb['width']))
+            _saved = f" on {_indd_thumb['saved']}" if _indd_thumb.get('saved') else ""
+            st.caption(f"Small preview ({_indd_thumb['width']} × {_indd_thumb['height']} px) saved inside the file by "
+                       f"{_indd_thumb['app']}{_saved}. It shows the first page and may not include the latest edits. "
+                       "It is not usable for production.")
+            st.info("""
+        **ArtCheck cannot check size, colors or fonts in an InDesign (.indd) file.**
+
+        **For a full check, ask for an export from InDesign as:**
+        - **PDF** (File → Export → Adobe PDF) - BEST for print
+        - **EPS** (File → Export → EPS)
+        """)
+        else:
+            st.error("### 📄 InDesign Files Not Supported")
+            st.warning("""
         **InDesign (.indd) files cannot be processed directly.**
     
         **Please export from InDesign as:**
@@ -2658,11 +2716,19 @@ if uploaded_file:
         render_artbot_sidebar()
         st.stop()
 
-    # GIMP's own format: accepted by the uploader only so we can explain what to do
+    # GIMP: flatten the layers to one image (xcf_tools) and treat it like any other image
+    _xcf_flat = None
     if uploaded_file.name.lower().endswith('.xcf'):
-        st.error("### 🖼️ GIMP Files Not Supported")
-        st.warning("""
-        **GIMP (.xcf) files cannot be processed directly.**
+        _xcf_id = f"{uploaded_file.name}|{uploaded_file.size}|{getattr(uploaded_file, 'file_id', '')}"
+        _xcf_flat = st.session_state.get('_xcf_flat')
+        if not isinstance(_xcf_flat, dict) or _xcf_flat.get('id') != _xcf_id:
+            with st.spinner("Opening GIMP file..."):
+                _xcf_flat = flatten_gimp_upload(uploaded_file.getvalue(), _xcf_id)
+            st.session_state['_xcf_flat'] = _xcf_flat
+        if _xcf_flat.get('error'):
+            st.error("### 🖼️ This GIMP file could not be opened")
+            st.warning(f"""
+        **{_xcf_flat['error']}**
 
         **Please export from GIMP as:**
         - **PNG** (File → Export As → name it .png) - keeps the transparent background
@@ -2670,8 +2736,8 @@ if uploaded_file:
 
         Then upload the exported file to ArtCheck!
         """)
-        render_artbot_sidebar()
-        st.stop()
+            render_artbot_sidebar()
+            st.stop()
 
     col_succ, col_clear = st.columns([4, 1])
     with col_succ:
@@ -2681,6 +2747,45 @@ if uploaded_file:
             st.session_state['file_uploader_key'] = st.session_state.get('file_uploader_key', 0) + 1
             _clear_file_state()
             st.rerun()
+
+    if _xcf_flat:
+        _info = _xcf_flat['info']
+        _layers = f"{_info['layers']} layer{'s' if _info['layers'] != 1 else ''}"
+        _hidden = f" ({_info['hidden']} hidden layer{'s' if _info['hidden'] != 1 else ''} left out)" if _info['hidden'] else ""
+        st.info(f"🖼️ GIMP file — {_layers} flattened into one image{_hidden}, analyzing for production suitability...")
+        if _info.get('approximate'):
+            st.caption("⚠️ This file uses effects ArtCheck draws as plain layers ("
+                       + ", ".join(_info['approximate']) + "). Colors in those areas may look different in GIMP.")
+        st.image(_xcf_flat['display'], caption="Flattened preview", use_container_width=True)
+        _xcf_stem = uploaded_file.name.rsplit('.', 1)[0]
+        st.download_button(
+            label="⬇️ Download PNG",
+            data=_xcf_flat['png'],
+            file_name=f"{_xcf_stem}.png",
+            mime="image/png",
+            use_container_width=True,
+            key="download_xcf_png_button",
+            help="The flattened image at full size, with its transparent background.",
+        )
+        analysis = _xcf_flat['analysis']
+        st.session_state['artbot_file_context'] = {
+            'filename': uploaded_file.name,
+            'file_type': 'raster',
+            'width': analysis.get('width_px'),
+            'height': analysis.get('height_px'),
+            'dpi': analysis.get('dpi'),
+            'color_mode': analysis.get('color_mode'),
+            'verdict': analysis.get('verdict'),
+            'warnings': analysis.get('warnings', []) + [
+                f"GIMP .xcf file, {_layers} flattened by ArtCheck{_hidden}"],
+            'size_kb': round(uploaded_file.size / 1024, 2),
+        }
+        render_raster_results(analysis, uploaded_file.name)
+        render_decoration_check(decoration_rules.facts_from_raster(analysis, uploaded_file.name), uploaded_file.name)
+        st.markdown("---")
+        _render_mockup_builder_button(_xcf_flat['png'], _xcf_stem)
+        render_artbot_sidebar()
+        st.stop()
 
     # PDF / AI: page picker for multi-page files, then check whether the chosen
     # page is only a picture (raster-in-PDF) before the normal vector flow

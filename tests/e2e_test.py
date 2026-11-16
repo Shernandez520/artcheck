@@ -115,7 +115,8 @@ def check_home(app):
     body = page.locator('[data-testid="stMain"]').inner_text()
     expect("Supported:" not in body, "the separate 'Supported:' box is back; the uploader already lists the file types")
     expect("PDF" in body and "DST" in body and "PNG" in body, "the uploader no longer lists the accepted file types")
-    expect("XCF and INDD files are not currently supported." in body, "the XCF / INDD disclaimer is missing")
+    expect("GIMP (.xcf) files are flattened to one image. InDesign (.indd) files show a small thumbnail only." in body,
+           "the note about what GIMP and InDesign uploads get is missing")
     expect("upload them" not in body.lower(), "the page should not invite users to upload unsupported files")
     app.no_errors()
 
@@ -733,19 +734,68 @@ def check_method_choice_survives_artbot(app):
     app.no_errors()
 
 
-def check_indesign_message(app):
+def check_indesign_thumbnail(app):
     page = app.fresh()
     app.upload("layout.indd")
-    page.get_by_text("InDesign Files Not Supported").wait_for(timeout=30_000)
+    page.get_by_text("InDesign file: thumbnail only").wait_for(timeout=30_000)
+    main = page.locator('[data-testid="stMain"]')
+    body = main.inner_text()
+    expect(main.locator('[data-testid="stImage"] img').count() == 1, "the InDesign thumbnail is not shown")
+    expect("256 × 198 px" in body and "Adobe InDesign 18.4" in body and "2025-05-09" in body,
+           "thumbnail size, app or save date missing (should come from the newest InDesign save)")
+    expect("not usable for production" in body, "the thumbnail is not labelled as unusable for production")
+    expect("Export" in body and "PDF" in body, "export instructions for InDesign files are missing")
+    expect("Generate Preview" not in body, "an InDesign file must not reach the normal preview flow")
     page.wait_for_timeout(2000)   # let the run finish: anything not redrawn is removed
     app.wait_for_sidebar()        # the sidebar must also be drawn on pages that stop early
     app.no_errors()
 
 
-def check_gimp_message(app):
+def check_indesign_without_preview(app):
+    page = app.fresh()
+    app.upload("no_preview.indd")
+    page.get_by_text("InDesign Files Not Supported").wait_for(timeout=30_000)
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    expect("Export" in body and "PDF" in body, "export instructions for InDesign files are missing")
+    page.wait_for_timeout(2000)
+    app.wait_for_sidebar()
+    app.no_errors()
+
+
+def check_gimp_preview(app):
+    from PIL import Image
     page = app.fresh()
     app.upload("artwork.xcf")
-    page.get_by_text("GIMP Files Not Supported").wait_for(timeout=30_000)
+    page.get_by_text("Usable Print Sizes").wait_for(timeout=60_000)
+    main = page.locator('[data-testid="stMain"]')
+    body = main.inner_text()
+    expect("3 layers flattened into one image" in body and "1 hidden layer left out" in body,
+           "the layer summary for the GIMP file is missing or wrong")
+    expect(metrics(page).get("Dimensions") == "300 × 200 px", f"Dimensions show {metrics(page).get('Dimensions')}")
+    expect('1.0" × 0.67"' in body, "the 300 dpi print size (1.0\" × 0.67\") is missing: resolution not read from the GIMP file")
+    expect("Decoration Method Check" in body, "the Decoration Method Check is missing for a GIMP file")
+    expect("could not be opened" not in body and "Files Not Supported" not in body, "a readable GIMP file was refused")
+    with page.expect_download(timeout=30_000) as dl:
+        page.get_by_role("button", name="Download PNG").click()
+    expect(dl.value.suggested_filename == "artwork.png", f"download is named {dl.value.suggested_filename}")
+    img = Image.open(dl.value.path())
+    expect(img.size == (300, 200) and img.mode == "RGBA", f"downloaded PNG is {img.size} {img.mode}")
+    # red box from the middle layer, cream background, and the hidden green layer absent
+    red, cream = img.getpixel((60, 60)), img.getpixel((5, 195))
+    expect(red[0] > 180 and red[1] < 60, f"the red layer is missing from the flattened image: {red}")
+    expect(cream[:3] == (245, 240, 225), f"background is {cream}; the hidden green layer may have been drawn")
+    sidebar = page.locator('[data-testid="stSidebar"]').inner_text()
+    expect("I can see your file" in sidebar and "artwork.xcf" in sidebar, "ArtBot does not know about the GIMP file")
+    # the X clears it like any other file
+    click_uploader_x(page)
+    page.get_by_text("Usable Print Sizes").wait_for(state="detached", timeout=20_000)
+    app.no_errors()
+
+
+def check_gimp_damaged(app):
+    page = app.fresh()
+    app.upload("damaged.xcf")
+    page.get_by_text("This GIMP file could not be opened").wait_for(timeout=30_000)
     body = page.locator('[data-testid="stMain"]').inner_text()
     expect("Export As" in body and "PNG" in body, "export instructions for GIMP files are missing")
     expect("Could not convert" not in body, "the old 'Could not convert file' error is shown for a GIMP file")
@@ -792,8 +842,10 @@ CHECKS = [
     ("ArtBot answers show formatted (headings, bold, lists, quotes) and stray markup is escaped", check_artbot_formatting),
     ("The X still clears everything after an ArtBot question", check_x_clears_after_artbot),
     ("Decoration Method Check keeps its selection after an ArtBot question", check_method_choice_survives_artbot),
-    ("InDesign upload shows export instructions", check_indesign_message),
-    ("GIMP (.xcf) upload shows export instructions", check_gimp_message),
+    ("InDesign upload shows the thumbnail saved in the file, plus export instructions", check_indesign_thumbnail),
+    ("InDesign upload without a saved preview shows export instructions", check_indesign_without_preview),
+    ("GIMP (.xcf) upload is flattened, analyzed and downloadable as PNG", check_gimp_preview),
+    ("Damaged GIMP file shows export instructions", check_gimp_damaged),
 ]
 
 

@@ -39,6 +39,46 @@ def white_logo_pdf(path):
     c.save()
 
 
+INDD_MAGIC = bytes.fromhex("0606edf5d81d46e5bd31efe7fe74b71d")
+
+
+def _xmp_packet(creator, saved, thumb_color=None, size=(256, 198)):
+    """One XMP packet the way Adobe apps write it, optionally with a JPEG thumbnail."""
+    import base64
+    import io
+    thumbs = ""
+    if thumb_color:
+        img = Image.new("RGB", size, "white")
+        ImageDraw.Draw(img).rectangle([40, 40, size[0] - 40, size[1] - 40], fill=thumb_color)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=80)
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        b64 = "&#xA;".join(b64[i:i + 76] for i in range(0, len(b64), 76))
+        thumbs = (f"<xmp:Thumbnails><rdf:Alt><rdf:li rdf:parseType=\"Resource\">"
+                  f"<xmpGImg:format>JPEG</xmpGImg:format><xmpGImg:width>{size[0]}</xmpGImg:width>"
+                  f"<xmpGImg:height>{size[1]}</xmpGImg:height><xmpGImg:image>{b64}</xmpGImg:image>"
+                  f"</rdf:li></rdf:Alt></xmp:Thumbnails>")
+    return (f"<?xpacket begin=\"\ufeff\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">"
+            f"<rdf:RDF><rdf:Description><xmp:CreatorTool>{creator}</xmp:CreatorTool>"
+            f"<xmp:MetadataDate>{saved}</xmp:MetadataDate>{thumbs}</rdf:Description></rdf:RDF></x:xmpmeta>\n"
+            f"<?xpacket end=\"r\"?>").encode("utf-8")
+
+
+def fake_indd(with_thumbnail=True):
+    """Bytes laid out like an InDesign document as far as ArtCheck reads it: the file
+    signature, binary filler, and XMP packets. Like a real one it holds a placed
+    Photoshop image's packet (with its own thumbnail), an older save of the document
+    and the newest save. The newest thumbnail is blue, the others red and gray."""
+    filler = bytes(range(256)) * 16
+    parts = [INDD_MAGIC, filler,
+             _xmp_packet("Adobe Photoshop 24.2 (Windows)", "2025-06-01T10:00:00-04:00", (200, 30, 40)), filler,
+             _xmp_packet("Adobe InDesign 18.2 (Windows)", "2025-03-01T09:00:00-04:00",
+                         (120, 120, 120) if with_thumbnail else None), filler,
+             _xmp_packet("Adobe InDesign 18.4 (Windows)", "2025-05-09T17:47:39-04:00",
+                         (30, 80, 210) if with_thumbnail else None), filler]
+    return b"".join(parts)
+
+
 def main(out_dir):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -249,10 +289,14 @@ def main(out_dir):
     pattern.end()
     pyembroidery.write_dst(pattern, str(out / "stitch.dst"))
 
-    # InDesign is unsupported; the app only looks at the file name
-    (out / "layout.indd").write_bytes(b"not a real InDesign file")
-    # Same for GIMP's .xcf
-    (out / "artwork.xcf").write_bytes(b"gimp xcf file\x00not a real GIMP file")
+    # InDesign: one file with the page thumbnail InDesign normally saves, one without
+    (out / "layout.indd").write_bytes(fake_indd())
+    (out / "no_preview.indd").write_bytes(b"not a real InDesign file")
+    # GIMP: a real file made by GIMP 2.10 from generated shapes (see tests/data/xcf),
+    # and one that is damaged
+    here = Path(__file__).resolve().parent
+    (out / "artwork.xcf").write_bytes((here / "data" / "xcf" / "plain.xcf").read_bytes())
+    (out / "damaged.xcf").write_bytes(b"gimp xcf file\x00not a real GIMP file")
 
     print(f"Created {len(list(out.iterdir()))} sample files in {out}")
 
