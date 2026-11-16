@@ -582,6 +582,8 @@ def check_artbot_formatting(app):
     expect(answer.locator("script").count() == 0 and answer.locator("b").count() == 0, "raw HTML from the answer was not escaped")
     expect(frame.evaluate("window.__artbotInjected") is None, "a script inside ArtBot's answer was executed")
     expect("<script>" in text and "<b>not bold</b>" in text, "stray markup should be shown as plain text")
+    track = frame.evaluate("getComputedStyle(document.getElementById('box')).scrollbarColor")
+    expect("13, 17, 23" in track, f"the chat box scrollbar track is not dark (scrollbar-color is {track!r})")
     asked = frame.locator(".user").first
     expect(asked.inner_text().strip() == question, f"the question is shown as {asked.inner_text()!r}")
     expect(asked.locator("b").count() == 0, "HTML typed by the user was not escaped")
