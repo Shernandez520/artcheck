@@ -26,6 +26,7 @@ import subprocess
 import os
 from PIL import Image, ImageDraw
 from pathlib import Path
+import html
 import tempfile
 
 import decoration_rules  # pure-Python rules for the Decoration Method Check
@@ -2163,6 +2164,72 @@ def render_color_results(color_data, file_ext):
 # SIDEBAR - ASK ARTBOT
 # ============================================================================
 
+def artbot_chat_page(history):
+    """Self-contained HTML page for ArtBot's conversation box (shown in an iframe).
+
+    ArtBot answers are Markdown. They used to be pasted into the page as raw
+    HTML, so headings showed as literal '#', and any '<' typed by a user or
+    produced by the model was treated as markup. Here the Markdown is converted
+    to HTML with raw HTML disabled (escaped), and user text is escaped.
+    """
+    try:
+        from markdown_it import MarkdownIt
+        _md = MarkdownIt("commonmark", {"html": False}).enable("table")
+
+        def render_answer(text):
+            return _md.render(text or "").replace("<a href=", '<a target="_blank" rel="noopener noreferrer" href=')
+    except Exception:
+        def render_answer(text):
+            return "<p>" + html.escape(text or "").replace("\n", "<br>") + "</p>"
+
+    parts = []
+    if not history:
+        parts.append('<div class="empty">💬 Conversation will appear here<br><br>'
+                     '<span>Use the input box below to ask a question</span></div>')
+    for msg in history:
+        if msg.get("role") == "user":
+            parts.append('<div class="msg user">' + html.escape(msg.get("content") or "").replace("\n", "<br>") + '</div>')
+        else:
+            parts.append('<div class="msg bot"><div class="who">🤖 ArtBot</div>' + render_answer(msg.get("content")) + '</div>')
+
+    return """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;}
+html,body{margin:0;height:100%;background:transparent;}
+body{font-family:"Source Sans Pro",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:15px;line-height:1.5;color:#e0e0e0;}
+#box{height:100%;overflow-y:auto;padding:8px;border:2px solid #1e3a5f;border-radius:8px;background:#0d1117;}
+.empty{color:#555;font-size:0.9rem;text-align:center;padding-top:40px;}
+.empty span{color:#444;font-size:0.85rem;}
+.msg{margin:4px 0;padding:6px 10px;overflow-wrap:anywhere;}
+.user{background:#2b2d42;border-radius:10px 10px 3px 10px;color:#fff;text-align:right;}
+.bot{background:#1e3a5f;border-radius:10px 10px 10px 3px;}
+.who{font-size:0.8rem;color:#9fb8d8;margin-bottom:2px;}
+.bot h1,.bot h2,.bot h3,.bot h4,.bot h5,.bot h6{font-size:1.02em;color:#fff;margin:10px 0 4px;}
+.bot .who + *{margin-top:0;}
+.bot p{margin:0 0 8px;}
+.bot > :last-child{margin-bottom:0;}
+.bot ul,.bot ol{margin:0 0 8px;padding-left:20px;}
+.bot li{margin:2px 0;}
+.bot blockquote{margin:6px 0 8px;padding:6px 10px;border-left:3px solid #8fa8ff;background:rgba(255,255,255,0.07);border-radius:4px;}
+.bot blockquote p:last-child{margin-bottom:0;}
+.bot hr{border:none;border-top:1px solid rgba(255,255,255,0.2);margin:10px 0;}
+.bot code{background:rgba(0,0,0,0.3);padding:1px 4px;border-radius:3px;font-size:0.9em;}
+.bot pre{background:rgba(0,0,0,0.3);padding:8px;border-radius:4px;overflow-x:auto;}
+.bot pre code{background:none;padding:0;}
+.bot table{border-collapse:collapse;margin:0 0 8px;font-size:0.92em;}
+.bot th,.bot td{border:1px solid rgba(255,255,255,0.25);padding:3px 6px;text-align:left;}
+.bot a{color:#9cc2ff;}
+</style></head><body>
+<div id="box">""" + "".join(parts) + """</div>
+<script>
+// Show the newest question at the top of the box so its answer can be read from the start
+var box=document.getElementById('box'), asked=document.querySelectorAll('.user');
+if(asked.length){box.scrollTop=asked[asked.length-1].offsetTop-8;}
+</script>
+</body></html>"""
+
+
 def build_artbot_system_prompt():
     """Build ArtBot system prompt, injecting file context if a file has been analyzed."""
     ctx = st.session_state.get('artbot_file_context')
@@ -2247,7 +2314,7 @@ def _artbot_sidebar_body():
         st.markdown(f"""
 <div style="background:#1a2535;border-radius:8px;padding:12px 14px;margin-bottom:10px;border-left:3px solid #28a745;">
   <div style="font-size:1.3rem;font-weight:bold;color:#fff;margin-bottom:6px;">🤖 I can see your file!</div>
-  <div style="font-size:0.9rem;color:#a0d0b0;margin-bottom:6px;">📁 <strong>{file_ctx['filename']}</strong></div>
+  <div style="font-size:0.9rem;color:#a0d0b0;margin-bottom:6px;">📁 <strong>{html.escape(str(file_ctx['filename']))}</strong></div>
   <div style="font-size:0.9rem;color:#b0c4de;">Ask me anything about this specific file — I have all the details ArtCheck found.</div>
 </div>
 """, unsafe_allow_html=True)
@@ -2273,6 +2340,14 @@ def _artbot_sidebar_body():
     # Handle pending question (from example buttons or send)
     def _run_artbot(question):
         st.session_state.artbot_history.append({"role": "user", "content": question})
+        # Test hook: the automated tests have no API key. When this variable points
+        # at a file, its text is used as the answer and the API is not called.
+        # It is never set in production.
+        _fake_reply = os.environ.get("ARTBOT_FAKE_REPLY_FILE")
+        if _fake_reply and os.path.exists(_fake_reply):
+            with open(_fake_reply, encoding="utf-8") as _fh:
+                st.session_state.artbot_history.append({"role": "assistant", "content": _fh.read()})
+            return
         try:
             import anthropic
             api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -2317,19 +2392,10 @@ def _artbot_sidebar_body():
     # Chat history label
     st.markdown('<div style="font-size:0.75rem;color:#555;margin-bottom:3px;padding-left:2px;">💬 Conversation</div>', unsafe_allow_html=True)
 
-    # Scrollable chat history box
-    chat_html = ""
-    if not st.session_state.artbot_history:
-        chat_html = '<div style="color:#555;font-size:0.85rem;text-align:center;padding-top:40px;">💬 Conversation will appear here<br><br><span style="color:#444;font-size:0.8rem;">Use the input box below to ask a question</span></div>'
-    for msg in st.session_state.artbot_history:
-        if msg["role"] == "user":
-            chat_html += f'''<div style="margin:4px 0;padding:6px 10px;background:#2b2d42;border-radius:10px 10px 3px 10px;color:#fff;font-size:0.95rem;text-align:right;">{msg["content"]}</div>'''
-        else:
-            chat_html += f'''<div style="margin:4px 0;padding:6px 10px;background:#1e3a5f;border-radius:10px 10px 10px 3px;color:#e0e0e0;font-size:0.95rem;">🤖 {msg["content"]}</div>'''
-    st.markdown(
-        f'''<div style="height:460px;overflow-y:auto;padding:8px;border:2px solid #1e3a5f;border-radius:8px;background:#0d1117;margin-bottom:4px;cursor:default;">{chat_html}</div>''',
-        unsafe_allow_html=True
-    )
+    # Scrollable chat history box. Rendered in its own frame from Markdown,
+    # with all user and model text escaped — see artbot_chat_page().
+    import streamlit.components.v1 as _chat_components
+    _chat_components.html(artbot_chat_page(st.session_state.artbot_history), height=466, scrolling=False)
     st.markdown('<div style="font-size:0.75rem;color:#555;margin-bottom:6px;padding-left:2px;">✏️ Type your question below</div>', unsafe_allow_html=True)
 
     # Example question chips — only show when no history
