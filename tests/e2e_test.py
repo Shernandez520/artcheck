@@ -526,7 +526,12 @@ def check_pdf_export_flags_raster(app):
 
 def check_pdf_export_not_offered_for_pdf(app):
     page = app.fresh()
+    # First a file that DOES get a PDF download, then a PDF in the same session
+    app.upload_vector("logo_3x2in.svg")
+    app.generate()
+    expect(page.get_by_role("button", name="Download PDF").count() == 1, "SVG should offer a PDF download")
     app.upload_vector("logo_red_3x2in.pdf")
+    page.wait_for_timeout(1500)
     app.generate()
     expect(page.get_by_role("button", name="Download PDF").count() == 0, "a PDF upload should not offer a PDF conversion")
     expect(page.get_by_role("button", name="Download PNG").count() > 0, "Download PNG button is missing")
@@ -538,6 +543,49 @@ def ask_artbot_example(page):
     page.get_by_role("button", name="Difference between vector and raster?").click()
     page.get_by_role("button", name="🔄 Clear conversation").wait_for(timeout=90_000)
     page.wait_for_timeout(2500)
+
+
+def chat_frame(page):
+    """The frame that holds ArtBot's conversation."""
+    for _ in range(40):
+        for frame in page.frames:
+            try:
+                if frame.locator("#box .bot").count():
+                    return frame
+            except Exception:
+                pass
+        page.wait_for_timeout(500)
+    raise AssertionError("ArtBot's answer did not appear in the conversation box")
+
+
+def check_artbot_formatting(app):
+    """Needs the app started with ARTBOT_FAKE_REPLY_FILE=tests/fake_artbot_reply.md."""
+    page = app.fresh()
+    question = "Is <b>this</b> ok & what about 5 < 6?"
+    box = page.locator('[data-testid="stSidebar"]').get_by_placeholder("Ask anything...")
+    box.fill(question)
+    box.press("Enter")
+    page.get_by_role("button", name="🔄 Clear conversation").wait_for(timeout=90_000)
+    frame = chat_frame(page)
+    answer = frame.locator(".bot").first
+    text = answer.inner_text()
+    expect(answer.locator("h1").count() == 1 and answer.locator("h1").inner_text().strip() == "Fonts Not Outlined",
+           "the '# Fonts Not Outlined' heading is not rendered as a heading")
+    expect("# Fonts" not in text and "**" not in text, "Markdown symbols are showing in ArtBot's answer")
+    expect(answer.locator("strong").count() >= 3, "bold text is not rendered")
+    expect(answer.locator("em").count() >= 1, "italic text is not rendered")
+    expect(answer.locator("ul li").count() == 2 and answer.locator("ol li").count() == 2, "lists are not rendered")
+    expect(answer.locator("blockquote").count() == 1, "the customer script is not rendered as a quote")
+    expect(answer.locator("table td").count() >= 2, "the table is not rendered")
+    expect(answer.locator("hr").count() == 1, "the divider is not rendered")
+    # nothing typed by a user or written by the model may run or become markup
+    expect(answer.locator("script").count() == 0 and answer.locator("b").count() == 0, "raw HTML from the answer was not escaped")
+    expect(frame.evaluate("window.__artbotInjected") is None, "a script inside ArtBot's answer was executed")
+    expect("<script>" in text and "<b>not bold</b>" in text, "stray markup should be shown as plain text")
+    asked = frame.locator(".user").first
+    expect(asked.inner_text().strip() == question, f"the question is shown as {asked.inner_text()!r}")
+    expect(asked.locator("b").count() == 0, "HTML typed by the user was not escaped")
+    app.no_errors()
 
 
 def check_x_clears_after_artbot(app):
@@ -628,6 +676,7 @@ CHECKS = [
     ("The X on the uploader clears a raster file's results", check_x_clears_raster),
     ("The X on the uploader clears a vector file's results", check_x_clears_vector),
     ("Results stay on screen after asking ArtBot a question", check_results_survive_artbot),
+    ("ArtBot answers show formatted (headings, bold, lists, quotes) and stray markup is escaped", check_artbot_formatting),
     ("The X still clears everything after an ArtBot question", check_x_clears_after_artbot),
     ("Decoration Method Check keeps its selection after an ArtBot question", check_method_choice_survives_artbot),
     ("InDesign upload shows export instructions", check_indesign_message),

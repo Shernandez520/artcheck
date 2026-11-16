@@ -29,8 +29,10 @@ jobs:
         # Same startup as start.sh, minus the two browser.server* flags that
         # point the page at www.artcheck.app. Memory is limited to 1 GB so a
         # change that makes previews use far more memory fails here first.
+        # ARTBOT_FAKE_REPLY_FILE gives ArtBot a canned answer (there is no API key here).
         run: |
-          docker run -d --name artcheck --memory=1g -p 8501:8501 artcheck-test \
+          docker run -d --name artcheck --memory=1g -p 8501:8501 \
+            -e ARTBOT_FAKE_REPLY_FILE=/app/tests/fake_artbot_reply.md artcheck-test \
             bash -c "python /app/inject_ga.py && exec streamlit run app_with_embroidery.py \
               --server.port=8501 --server.address=0.0.0.0 --server.headless=true \
               --server.maxUploadSize=50 --server.enableCORS=false \

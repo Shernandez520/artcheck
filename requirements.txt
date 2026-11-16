@@ -5,3 +5,4 @@ pyembroidery==1.5.1
 pdf2image==1.17.0
 pymupdf==1.26.5
 anthropic==0.49.0
+markdown-it-py==3.0.0
