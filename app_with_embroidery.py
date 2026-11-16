@@ -2457,6 +2457,7 @@ uploaded_file = st.file_uploader(
     on_change=_on_uploader_change,
     args=(_uploader_key,),
 )
+st.caption("XCF and INDD files are not currently supported.")
 
 if uploaded_file:
     # Drop raster-in-PDF caches that belong to any previously uploaded file
