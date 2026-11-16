@@ -24,7 +24,7 @@ Sales reps and CSRs have no self-service option, so every question stops an arti
 ## What ArtCheck Does
 
 ### Instant Previews
-Upload `.ai`, `.eps`, `.pdf`, `.svg`, `.cdr`, or embroidery files (`.dst`, `.pes`, and more) and get a clean PNG preview in seconds — with smart background handling for the classic white-logo-on-white-page problem, and pan/zoom inspection. The preview panel reports the file's real size in inches (not the size of the preview image) and tells you when a PDF or Illustrator file has more pages than the one shown.
+Upload `.ai`, `.eps`, `.pdf`, `.svg`, `.cdr`, or embroidery files (`.dst`, `.pes`, and more) and get a clean PNG preview in seconds — with smart background handling for the classic white-logo-on-white-page problem, and pan/zoom inspection. Backgrounds (auto, light, dark, transparent) switch instantly. The preview panel reports the file's real size in inches (not the size of the preview image), and multi-page PDF and Illustrator files get a page picker so any page or artboard can be previewed and analyzed.
 
 ### Real Color Analysis (not pixel guessing)
 ArtCheck parses color data from the **file's internal structure before rasterization** — PDF content streams, PostScript operators, separation colorspaces — so it reports what production actually needs:
@@ -92,7 +92,8 @@ Files are processed in memory and discarded immediately. Nothing is stored, and 
 - [x] Decoration method pre-screening with imprint locations and print size
 - [x] Vector PDF export for EPS, AI, SVG and CorelDRAW
 - [x] Automated browser tests on every pull request
-- [ ] Page picker for multi-page files
+- [x] Page picker for multi-page PDF and Illustrator files
+- [x] Instant background switching
 - [ ] Batch processing
 - [ ] Shareable preview links
 - [ ] Team accounts & file history

@@ -41,8 +41,22 @@ CDR: `convert_cdr()` → `cdr2xhtml` (libcdr) → `cdr_tools.svg_pages_from_libc
 only; real page size comes from the converted PDF. One conversion per run is
 shared by both preview renders and the PDF download (`_CDR_CONVERSIONS`).
 Embroidery: pyembroidery → PIL visualization.
-Background via `_apply_background(output_file, bg_type)`; both fitz (alpha=True)
-and GS (pngalpha) must render with transparency for backgrounds to work.
+**One render per Generate Preview, always transparent** (`'transparent_alpha'`).
+The background is added afterwards by `compose_background()`; both fitz
+(alpha=True) and GS (pngalpha) must render with transparency for that to work.
+Session state keeps `preview_alpha_bytes` (transparent, ≤1200 px) and
+`preview_image_bytes` (what is shown) + `preview_image_bg`; when `bg_type`
+changes, the display block re-composes instantly — never re-render the file for
+a background change. `preview_download_bytes` is the trimmed full-size PNG.
+
+**Multi-page PDF / AI:** a `Page` selectbox appears in the PDF pre-check block
+(before the raster-in-PDF test, so a scanned page 1 can't hide a vector page 2).
+`extract_pdf_page()` writes a one-page copy and the whole pipeline (preview,
+size, colors, fonts) runs on that copy, so no analyzer needs a page argument.
+`result['page_count']` / `['page_number']` are set at the call site. Choosing
+another page regenerates automatically (`_page_autogen_attempt` prevents a
+failing page from looping). The PDF download is always the whole file.
+CorelDRAW is still page 1 only.
 
 ### RasterAnalyzer
 Reads DPI from Pillow metadata, computes usable print sizes at 300/200 DPI,
@@ -61,6 +75,10 @@ scan for `scn`/`k` operators → CMYK-from-stream overrides xref DeviceRGB artif
 
 **EPS pipeline:** GS `pdfwrite` → fitz content stream → parse `k`/`scn` →
 spot names from original EPS text (printable-ASCII filter for binary garbage).
+The pdfwrite conversion comes from `convert_eps_to_pdf()`, which is cached for
+the run and shared by color analysis, the font check and the PDF download: an
+EPS costs two Ghostscript runs per Generate Preview (one pngalpha preview, one
+pdfwrite), not five. Don't add separate `gs` calls for EPS.
 
 **Key operators:** Illustrator AI/PDF uses `scn`; GS-converted EPS uses `k`;
 plain PostScript uses `setcmykcolor`/`setgray`.

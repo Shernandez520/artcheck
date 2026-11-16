@@ -32,6 +32,126 @@ import tempfile
 import decoration_rules  # pure-Python rules for the Decoration Method Check
 import cdr_tools         # pure-Python helpers for CorelDRAW conversion
 
+# EPS -> PDF conversions made during this script run, keyed by file path. Color
+# analysis, the font check and the PDF download all need the same Ghostscript
+# conversion; doing it once instead of three times is the EPS speed-up.
+_EPS_PDFS = {}
+
+
+def convert_eps_to_pdf(input_file):
+    """EPS -> vector PDF bytes with Ghostscript pdfwrite, or None. Cached per run."""
+    if input_file in _EPS_PDFS:
+        return _EPS_PDFS[input_file]
+    pdf_bytes = None
+    out_pdf = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            out_pdf = tmp.name
+        base = ['gs', '-dNOPAUSE', '-dBATCH', '-dSAFER', '-sDEVICE=pdfwrite',
+                '-dAutoRotatePages=/None', f'-sOutputFile={out_pdf}']
+        # -dEPSCrop makes the page the size of the artwork instead of a letter page
+        for extra in (['-dEPSCrop'], []):
+            run = subprocess.run(base + extra + [input_file], capture_output=True, timeout=30)
+            if run.returncode == 0 and os.path.exists(out_pdf) and os.path.getsize(out_pdf) > 0:
+                with open(out_pdf, 'rb') as f:
+                    pdf_bytes = f.read()
+                break
+    except Exception:
+        pdf_bytes = None
+    finally:
+        if out_pdf and os.path.exists(out_pdf):
+            try:
+                os.unlink(out_pdf)
+            except Exception:
+                pass
+    _EPS_PDFS[input_file] = pdf_bytes
+    return pdf_bytes
+
+
+def extract_pdf_page(input_file, page_index):
+    """Write ONE page of a PDF / AI file to a new temp file and return its path.
+
+    The whole analysis pipeline (preview, size, colors, fonts, raster detection)
+    works on page 1 of whatever file it is given, so handing it a one-page copy
+    makes every part of it page-specific without touching the analyzers.
+    Returns None if the page can't be extracted.
+    """
+    out_path = None
+    try:
+        import fitz
+        src = fitz.open(input_file)
+        try:
+            if page_index < 0 or page_index >= src.page_count:
+                return None
+            single = fitz.open()
+            single.insert_pdf(src, from_page=page_index, to_page=page_index)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=Path(input_file).suffix) as tmp:
+                out_path = tmp.name
+            single.save(out_path, garbage=3, deflate=True)
+            single.close()
+        finally:
+            src.close()
+        return out_path
+    except Exception:
+        if out_path and os.path.exists(out_path):
+            os.unlink(out_path)
+        return None
+
+
+def compose_background(img, bg_type):
+    """Put a transparent preview on the chosen background and return the new image.
+
+    bg_type: 'auto' | 'light' | 'dark' | 'transparent' (checkerboard) |
+             'transparent_alpha' (leave the transparency alone).
+    Used when a preview is generated and again, instantly, whenever the user
+    picks a different background — no re-render of the file is needed.
+    """
+    img = img.convert('RGBA')
+    if bg_type == 'transparent_alpha':
+        return img
+
+    if bg_type == 'transparent':
+        # Classic Photoshop-style checkerboard to show transparency
+        checker_size = max(16, min(img.width, img.height) // 30)
+        checker = Image.new('RGBA', img.size, (255, 255, 255, 255))
+        draw_checker = ImageDraw.Draw(checker)
+        light = (204, 204, 204, 255)
+        dark_sq = (153, 153, 153, 255)
+        for y in range(0, img.height, checker_size):
+            for x in range(0, img.width, checker_size):
+                color = dark_sq if (x // checker_size + y // checker_size) % 2 == 0 else light
+                draw_checker.rectangle([x, y, x+checker_size, y+checker_size], fill=color)
+        checker.paste(img, mask=img.split()[3])
+        return checker.convert('RGB')
+
+    if bg_type == 'dark':
+        bg_color = (30, 30, 30, 255)
+    elif bg_type == 'auto':
+        # Mostly-light artwork gets a dark background. Measure only the artwork
+        # itself: transparent pixels are stored as black, so counting them made a
+        # white logo on an empty page look "dark" (white-on-white).
+        from PIL import ImageStat
+        grayscale = img.convert('L')
+        art_mask = img.split()[3].point(lambda a: 255 if a >= 128 else 0)
+        stat = ImageStat.Stat(grayscale, mask=art_mask)
+        avg = stat.mean[0] if stat.count[0] else 0
+        bg_color = (30, 30, 30, 255) if avg > 200 else (255, 255, 255, 255)
+    else:  # 'light' and anything unknown
+        bg_color = (255, 255, 255, 255)
+
+    background = Image.new('RGBA', img.size, bg_color)
+    background.paste(img, mask=img.split()[3])
+    return background.convert('RGB')
+
+
+def compose_preview_bytes(alpha_png_bytes, bg_type):
+    """PNG bytes of the stored transparent preview on the chosen background."""
+    import io
+    out = io.BytesIO()
+    compose_background(Image.open(io.BytesIO(alpha_png_bytes)), bg_type).save(out, format='PNG', optimize=True)
+    return out.getvalue()
+
+
 # CorelDRAW conversions made during this script run, keyed by file path, so the
 # two preview renders and the PDF download share one conversion (it is slow).
 # Streamlit re-executes this file on every run, so this never outlives a run.
@@ -687,52 +807,9 @@ class PreviewGenerator:
             return False
 
     def _apply_background(self, output_file, bg_type):
-        """Apply background color to a PNG preview"""
+        """Apply a background to a PNG preview file (see compose_background)."""
         try:
-            img = Image.open(output_file).convert('RGBA')
-
-            if bg_type == 'transparent_alpha':
-                # True transparent RGBA PNG for download
-                img.save(output_file, 'PNG')
-                return
-
-            if bg_type == 'transparent':
-                # Render classic Photoshop-style checkerboard to show transparency
-                checker_size = max(16, min(img.width, img.height) // 30)
-                checker = Image.new('RGBA', img.size, (255, 255, 255, 255))
-                draw_checker = ImageDraw.Draw(checker)
-                light = (204, 204, 204, 255)
-                dark_sq = (153, 153, 153, 255)
-                for y in range(0, img.height, checker_size):
-                    for x in range(0, img.width, checker_size):
-                        color = dark_sq if (x // checker_size + y // checker_size) % 2 == 0 else light
-                        draw_checker.rectangle([x, y, x+checker_size, y+checker_size], fill=color)
-                checker.paste(img, mask=img.split()[3])
-                checker.convert('RGB').save(output_file, 'PNG')
-                return
-
-            # Determine background color
-            if bg_type == 'dark':
-                bg_color = (30, 30, 30, 255)
-            elif bg_type == 'light':
-                bg_color = (255, 255, 255, 255)
-            elif bg_type == 'auto':
-                # Check if artwork is mostly light — if so, use dark bg.
-                # Measure only the artwork itself: transparent pixels are stored
-                # as black, so counting them made a white logo on an empty page
-                # look "dark" and land on a white background (white-on-white).
-                from PIL import ImageStat
-                grayscale = img.convert('L')
-                art_mask = img.split()[3].point(lambda a: 255 if a >= 128 else 0)
-                stat = ImageStat.Stat(grayscale, mask=art_mask)
-                avg = stat.mean[0] if stat.count[0] else 0
-                bg_color = (30, 30, 30, 255) if avg > 200 else (255, 255, 255, 255)
-            else:
-                bg_color = (255, 255, 255, 255)
-
-            background = Image.new('RGBA', img.size, bg_color)
-            background.paste(img, mask=img.split()[3])
-            background.convert('RGB').save(output_file, 'PNG')
+            compose_background(Image.open(output_file), bg_type).save(output_file, 'PNG')
         except Exception as e:
             st.warning(f"Background application failed: {str(e)}")
 
@@ -1491,14 +1568,13 @@ class ColorExtractor:
         results['color_mode'] = self._detect_color_mode_eps(input_file)
         tmp_pdf = None
         try:
-            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
-                tmp_pdf = tmp.name
-            gs_result = subprocess.run([
-                'gs', '-dNOPAUSE', '-dBATCH', '-dSAFER',
-                '-sDEVICE=pdfwrite', f'-sOutputFile={tmp_pdf}', input_file
-            ], capture_output=True, timeout=30)
+            eps_pdf_bytes = convert_eps_to_pdf(input_file)   # shared with font check + PDF download
+            if eps_pdf_bytes:
+                with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+                    tmp.write(eps_pdf_bytes)
+                    tmp_pdf = tmp.name
 
-            if gs_result.returncode == 0 and os.path.exists(tmp_pdf):
+            if eps_pdf_bytes and os.path.exists(tmp_pdf):
                 import fitz
                 doc = fitz.open(tmp_pdf)
                 page = doc[0]
@@ -1778,14 +1854,12 @@ class FontChecker:
         """EPS -> PDF with Ghostscript, then look for text the same way as a PDF."""
         tmp_pdf = None
         try:
-            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
-                tmp_pdf = tmp.name
-            gs = subprocess.run([
-                'gs', '-dNOPAUSE', '-dBATCH', '-dSAFER',
-                '-sDEVICE=pdfwrite', f'-sOutputFile={tmp_pdf}', input_file
-            ], capture_output=True, timeout=30)
-            if gs.returncode != 0 or not os.path.exists(tmp_pdf) or os.path.getsize(tmp_pdf) == 0:
+            eps_pdf_bytes = convert_eps_to_pdf(input_file)   # shared with color analysis + PDF download
+            if not eps_pdf_bytes:
                 return None
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+                tmp.write(eps_pdf_bytes)
+                tmp_pdf = tmp.name
             result = self._check_pdf(tmp_pdf)
         finally:
             if tmp_pdf and os.path.exists(tmp_pdf):
@@ -1880,14 +1954,12 @@ class PdfConverter:
                     pass
 
     def _eps_to_pdf(self, input_file, out_pdf):
-        base = ['gs', '-dNOPAUSE', '-dBATCH', '-dSAFER', '-sDEVICE=pdfwrite',
-                '-dAutoRotatePages=/None', f'-sOutputFile={out_pdf}']
-        # -dEPSCrop makes the page the size of the artwork instead of a letter page
-        for extra in (['-dEPSCrop'], []):
-            run = subprocess.run(base + extra + [input_file], capture_output=True, timeout=30)
-            if run.returncode == 0 and os.path.exists(out_pdf) and os.path.getsize(out_pdf) > 0:
-                return True
-        return False
+        eps_pdf_bytes = convert_eps_to_pdf(input_file)   # shared with color analysis + font check
+        if not eps_pdf_bytes:
+            return False
+        with open(out_pdf, 'wb') as f:
+            f.write(eps_pdf_bytes)
+        return True
 
     def _ai_to_pdf(self, input_file, out_pdf, info):
         import fitz
@@ -1961,6 +2033,8 @@ def render_pdf_export(pdf_bytes, info, filename_stem, live_text=False):
     else:
         st.caption("⚠️ ArtCheck could not confirm vector content in this PDF. Check it before sending.")
     notes = []
+    if (info.get('pages') or 1) > 1:
+        notes.append(f"The PDF contains all {info['pages']} pages of the file, not only the page shown above.")
     if live_text:
         notes.append("This file has live text. Where a font isn't inside the file, the PDF shows a substitute typeface — compare it with the original before sending.")
     if info.get('source') == '.svg':
@@ -2253,7 +2327,7 @@ def build_artbot_system_prompt():
     if ctx.get('size_kb'):
         lines.append(f"File size: {ctx['size_kb']} KB")
     if ctx.get('page_count') and ctx['page_count'] > 1:
-        lines.append(f"Pages/artboards in file: {ctx['page_count']} (ArtCheck only previewed and analyzed page 1)")
+        lines.append(f"Pages/artboards in file: {ctx['page_count']} (ArtCheck previewed and analyzed page {ctx.get('page_number') or 1} only)")
 
     # Raster-specific
     if ctx.get('dpi'):
@@ -2499,7 +2573,8 @@ def _clear_file_state():
     """Forget everything about the current file: preview, analysis, ArtBot's
     file context, Mockup Builder handoff and raster-in-PDF caches."""
     for _key in ('preview_image_bytes', 'preview_result', 'preview_color_data', 'preview_filename',
-                 'preview_download_bytes', 'preview_pdf_bytes', 'artbot_file_context', '_raster_context_synced',
+                 'preview_download_bytes', 'preview_pdf_bytes', 'preview_alpha_bytes', 'preview_image_bg',
+                 '_page_autogen_attempt', 'artbot_file_context', '_raster_context_synced',
                  '_raster_display_bytes', '_raster_analysis', '_raster_filename'):
         st.session_state.pop(_key, None)
     _old_token = st.session_state.pop('mockup_handoff_token', None)
@@ -2548,6 +2623,9 @@ if uploaded_file:
         st.session_state.pop('preview_filename', None)
         st.session_state.pop('preview_download_bytes', None)
         st.session_state.pop('preview_pdf_bytes', None)
+        st.session_state.pop('preview_alpha_bytes', None)
+        st.session_state.pop('preview_image_bg', None)
+        st.session_state.pop('_page_autogen_attempt', None)
         st.session_state.pop('artbot_file_context', None)
         st.session_state.pop('_raster_context_synced', None)
         st.session_state.pop('_raster_display_bytes', None)
@@ -2594,7 +2672,10 @@ if uploaded_file:
             _clear_file_state()
             st.rerun()
 
-    # Check for raster-in-PDF before normal vector flow
+    # PDF / AI: page picker for multi-page files, then check whether the chosen
+    # page is only a picture (raster-in-PDF) before the normal vector flow
+    _page_index = 0
+    _page_total = 1
     if Path(uploaded_file.name).suffix.lower() in ['.pdf', '.ai']:
         with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as _tmp:
             _tmp.write(uploaded_file.getvalue())
@@ -2602,14 +2683,22 @@ if uploaded_file:
         try:
             import fitz as _fitz
             _doc = _fitz.open(_pdf_tmp_path)
-            _page = _doc[0]
+            _page_total = _doc.page_count or 1
+            if _page_total > 1:
+                _page_index = st.selectbox(
+                    "Page", list(range(_page_total)),
+                    format_func=lambda i: f"Page {i + 1} of {_page_total}",
+                    key=f"page_pick_{uploaded_file.name}_{uploaded_file.size}",
+                    help="This file has more than one page (or artboard). Pick the one to preview and analyze.",
+                )
+            _page = _doc[_page_index]
             _paths = _page.get_drawings()
             _images = _page.get_images()
             _is_raster_pdf = len(_images) > 0 and len(_paths) < 3
             if _is_raster_pdf:
                 st.info("📷 Raster image detected inside PDF — analyzing for production suitability...")
                 # Extract and cache image bytes in session state so bg changes don't re-extract
-                _cache_key = f"raster_pdf_bytes_{uploaded_file.name}_{uploaded_file.size}"
+                _cache_key = f"raster_pdf_bytes_p{_page_index}_{uploaded_file.name}_{uploaded_file.size}"
                 if _cache_key not in st.session_state:
                     _xref = _images[0][0]
                     _base_image = _doc.extract_image(_xref)
@@ -2654,7 +2743,7 @@ if uploaded_file:
                 # 'transparent' falls through with no background applied
                 st.image(_preview_img, caption="Extracted raster image from PDF", use_container_width=True)
                 # Run raster analysis (cached so it doesn't re-run on bg button clicks)
-                _analysis_key = f"raster_pdf_analysis_{uploaded_file.name}_{uploaded_file.size}"
+                _analysis_key = f"raster_pdf_analysis_p{_page_index}_{uploaded_file.name}_{uploaded_file.size}"
                 if _analysis_key not in st.session_state:
                     _raster_analyzer = RasterAnalyzer()
                     st.session_state[_analysis_key] = _raster_analyzer.analyze(_img_tmp)
@@ -2761,30 +2850,57 @@ if uploaded_file:
                 st.rerun()
 
     bg_type = st.session_state.bg_type
-    st.caption(f"Background: **{bg_type.title()}** — click Generate Preview to apply a new background")
+    st.caption(f"Background: **{bg_type.title()}** — switches instantly once a preview is showing")
+
+    # Picking a different page of a file that already has a preview regenerates
+    # it automatically. The attempt marker stops a failing page from looping.
+    _file_id = f"{uploaded_file.name}|{uploaded_file.size}"
+    _shown = st.session_state.get('preview_result') or {}
+    _page_changed = (
+        _page_total > 1
+        and st.session_state.get('preview_image_bytes')
+        and st.session_state.get('preview_filename') == uploaded_file.name
+        and (_shown.get('page_number') or 1) != _page_index + 1
+        and st.session_state.get('_page_autogen_attempt') != (_file_id, _page_index)
+    )
 
     # Generate Preview
-    if st.button("🚀 Generate Preview", use_container_width=True, type="primary"):
+    if st.button("🚀 Generate Preview", use_container_width=True, type="primary") or _page_changed:
+        st.session_state['_page_autogen_attempt'] = (_file_id, _page_index)
         with st.spinner("Generating preview..."):
             with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp_file:
                 tmp_file.write(uploaded_file.getvalue())
                 tmp_path = tmp_file.name
 
+            # Multi-page PDF / AI: analyze a one-page copy of the chosen page
+            analysis_path = tmp_path
+            _page_path = None
+            if _page_total > 1:
+                _page_path = extract_pdf_page(tmp_path, _page_index)
+                if _page_path:
+                    analysis_path = _page_path
+
             generator = get_preview_generator()
-            result = generator.generate_preview(tmp_path, bg_type)
+            # ONE render, with transparency. The background is added afterwards
+            # (compose_background), which is what makes background changes instant.
+            result = generator.generate_preview(analysis_path, 'transparent_alpha')
             if result:
                 # Report the size of the file the user uploaded, not of the preview PNG
                 result['size_kb'] = round(uploaded_file.size / 1024, 2)
-            # Generate transparent version for download
-            _dl_result = generator.generate_preview(tmp_path, 'transparent_alpha')
+                if _page_total > 1:
+                    result['page_count'] = _page_total
+                    result['page_number'] = (_page_index + 1) if _page_path else 1
+
             _dl_bytes = None
-            if _dl_result and os.path.exists(_dl_result['image']):
-                # Trim transparent edges so the PNG drops cleanly onto mockups
+            _alpha_bytes = None
+            if result and os.path.exists(result['image']):
+                import io as _io
+                _full = Image.open(result['image'])
+                if _full.mode != 'RGBA':
+                    _full = _full.convert('RGBA')
+                # Download version: trim transparent edges so it drops cleanly onto mockups
                 try:
-                    import io as _io
-                    _dl_img = Image.open(_dl_result['image'])
-                    if _dl_img.mode != 'RGBA':
-                        _dl_img = _dl_img.convert('RGBA')
+                    _dl_img = _full
                     _bbox = _dl_img.split()[3].getbbox()
                     if _bbox:
                         _dl_img = _dl_img.crop(_bbox)
@@ -2793,61 +2909,56 @@ if uploaded_file:
                     _dl_bytes = _dl_buf.getvalue()
                 except Exception:
                     # Fall back to untrimmed bytes if anything goes wrong
-                    with open(_dl_result['image'], 'rb') as _dlf:
+                    with open(result['image'], 'rb') as _dlf:
                         _dl_bytes = _dlf.read()
+                # Screen version: at most 1200 px, still transparent. Full-res can be
+                # 20-30MB, which is too much to keep in session memory.
+                _max = 1200
+                _small = _full
+                if max(_small.width, _small.height) > _max:
+                    _ratio = _max / max(_small.width, _small.height)
+                    _small = _small.resize((int(_small.width * _ratio), int(_small.height * _ratio)), Image.LANCZOS)
+                _alpha_buf = _io.BytesIO()
+                _small.save(_alpha_buf, format='PNG', optimize=True)
+                _alpha_bytes = _alpha_buf.getvalue()
 
             color_data = None
             file_ext = Path(uploaded_file.name).suffix.lower()
             if file_ext in [".pdf", ".ai", ".eps", ".svg"]:
                 extractor = get_color_extractor()
-                color_data = extractor.extract(tmp_path)
+                color_data = extractor.extract(analysis_path)
 
             # Live-text / fonts-not-outlined check (same file types as color analysis)
             if result and file_ext in [".pdf", ".ai", ".eps", ".svg"]:
-                result['font_check'] = FontChecker().check(tmp_path)
+                result['font_check'] = FontChecker().check(analysis_path)
 
-            # Vector PDF version of EPS / AI / SVG files (never built from the preview image)
+            # Vector PDF version of EPS / AI / SVG / CDR files (never built from the
+            # preview image). Always the whole file, not just the page being viewed.
             _pdf_bytes = None
             if result and PdfConverter().can_convert(uploaded_file.name):
                 _pdf_bytes, result['pdf_export'] = PdfConverter().convert(tmp_path)
 
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
+            for _tmp_file in (tmp_path, _page_path):
+                if _tmp_file and os.path.exists(_tmp_file):
+                    os.unlink(_tmp_file)
             _CDR_CONVERSIONS.clear()
+            _EPS_PDFS.clear()
 
-            # Read image bytes BEFORE anything else
-            _image_bytes = None
-            if result and os.path.exists(result["image"]):
-                with open(result["image"], "rb") as _f:
-                    _image_bytes = _f.read()
-
-            # The preview PNGs are now in memory — remove them from /tmp so
-            # they don't pile up on the server for the life of the container.
-            for _r in (result, _dl_result):
-                try:
-                    if _r and _r.get('image') and os.path.exists(_r['image']):
-                        os.unlink(_r['image'])
-                except Exception:
-                    pass
+            # The preview PNG is now in memory — remove it from /tmp so files
+            # don't pile up on the server for the life of the container.
+            try:
+                if result and result.get('image') and os.path.exists(result['image']):
+                    os.unlink(result['image'])
+            except Exception:
+                pass
 
         # Store everything in session state OUTSIDE the spinner
-        if result and _image_bytes:
-            # Downsize image for session state storage — max 1200px on longest side
-            # Full-res can be 20-30MB which kills free tier memory
-            import io
-            from PIL import Image as _PILResize
-            _img = _PILResize.open(io.BytesIO(_image_bytes))
-            _max = 1200
-            if max(_img.width, _img.height) > _max:
-                _ratio = _max / max(_img.width, _img.height)
-                _img = _img.resize((int(_img.width * _ratio), int(_img.height * _ratio)), _PILResize.LANCZOS)
-            _buf = io.BytesIO()
-            if _img.mode not in ('RGBA', 'LA'):
-                _img = _img.convert('RGBA')
-            _img.save(_buf, format='PNG', optimize=True)
-            st.session_state['preview_image_bytes'] = _buf.getvalue()
+        if result and _alpha_bytes:
+            st.session_state['preview_alpha_bytes'] = _alpha_bytes
+            st.session_state['preview_image_bytes'] = compose_preview_bytes(_alpha_bytes, bg_type)
+            st.session_state['preview_image_bg'] = bg_type
             st.session_state['preview_download_bytes'] = _dl_bytes
-            st.session_state['preview_pdf_bytes'] = _pdf_bytes  # None unless EPS / AI / SVG
+            st.session_state['preview_pdf_bytes'] = _pdf_bytes  # None unless EPS / AI / SVG / CDR
             st.session_state['preview_result'] = result
             st.session_state['preview_color_data'] = color_data
             st.session_state['preview_filename'] = uploaded_file.name
@@ -2860,6 +2971,7 @@ if uploaded_file:
                 'width_in': result.get('width_in'),
                 'height_in': result.get('height_in'),
                 'page_count': result.get('page_count'),
+                'page_number': result.get('page_number'),
                 'font_check': result.get('font_check'),
                 'color_data': color_data,
                 'embroidery_info': result.get('embroidery_info'),
@@ -2882,11 +2994,24 @@ if not uploaded_file and st.session_state.get('_raster_display_bytes') and st.se
 if st.session_state.get('preview_image_bytes') and st.session_state.get('preview_result'):
     result = st.session_state['preview_result']
     color_data = st.session_state.get('preview_color_data')
+    # Instant background switching: re-compose the stored transparent preview
+    # whenever the chosen background differs from the one currently shown
+    _want_bg = st.session_state.get('bg_type', 'auto')
+    if st.session_state.get('preview_alpha_bytes') and st.session_state.get('preview_image_bg') != _want_bg:
+        try:
+            st.session_state['preview_image_bytes'] = compose_preview_bytes(st.session_state['preview_alpha_bytes'], _want_bg)
+            st.session_state['preview_image_bg'] = _want_bg
+        except Exception:
+            pass
     img_bytes = st.session_state['preview_image_bytes']
     st.markdown('<div class="success-box">✅ Preview generated successfully!</div>', unsafe_allow_html=True)
     if (result.get('page_count') or 1) > 1:
-        st.info(f"📄 This file has **{result['page_count']} pages**. ArtCheck previews and analyzes **page 1 only** — "
-                "the preview, size and colors below do not cover the other pages.")
+        if result.get('page_number'):
+            st.info(f"📄 This file has **{result['page_count']} pages**. Showing **page {result['page_number']}** — the preview, "
+                    "size, fonts and colors below are for that page. Use the **Page** menu above to look at another one.")
+        else:
+            st.info(f"📄 This file has **{result['page_count']} pages**. ArtCheck previews and analyzes **page 1 only** — "
+                    "the preview, size and colors below do not cover the other pages.")
     col1, col2 = st.columns([2, 1])
     with col1:
         import base64, streamlit.components.v1 as _components

@@ -185,9 +185,11 @@ def _():
     assert dr.evaluate(f, "buttons")["dpi"] == 300
 
 
-@case("multi-page files are noted")
+@case("multi-page files are noted, with the page that was screened")
 def _():
     assert "page 1 of 3" in text(dr.evaluate(vector(spots=3, mode="Spot Color", pages=3), "dtg"))
+    facts = dr.facts_from_vector({"file_type": "Vector (PDF)", "width": 100, "height": 100, "page_count": 3, "page_number": 2}, None)
+    assert "Only page 2 of 3 was screened" in text(dr.evaluate(facts, "dtg"))
 
 
 @case("customer script and ArtBot summary are produced")

@@ -43,6 +43,11 @@ def main(out_dir):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
+    # 900 x 600 px image tagged 72 DPI: enough pixels for "borderline", not "good"
+    photo = Image.new("RGB", (900, 600), "white")
+    ImageDraw.Draw(photo).ellipse([100, 100, 800, 500], fill=(200, 0, 200))
+    photo.save(out / "photo_900x600.png", dpi=(72, 72))
+
     vector_pdf(out / "logo_red_3x2in.pdf", 216, 144, RED)      # 3" x 2"
     vector_pdf(out / "logo_blue_3x2in.pdf", 216, 144, BLUE)    # 3" x 2"
     vector_pdf(out / "letter_page.pdf", 612, 792, RED)         # 8.5" x 11"
@@ -113,16 +118,32 @@ def main(out_dir):
         '</svg>'
     )
 
-    # Two-page PDF (page 1 is 3" x 2")
-    c = canvas.Canvas(str(out / "two_pages.pdf"), pagesize=(216, 144))
-    for color in (RED, BLUE):
-        c.setFillColor(color)
-        c.rect(20, 20, 176, 104, fill=1, stroke=0)
-        c.setFillColor(BLACK)
-        c.rect(30, 30, 10, 10, fill=1, stroke=0)
-        c.rect(50, 30, 10, 10, fill=1, stroke=0)
-        c.circle(108, 72, 20, fill=1, stroke=0)
-        c.showPage()
+    # Two-page PDF: page 1 is 3" x 2" and red, page 2 is 5" x 4" and blue
+    def two_pages(path):
+        c = canvas.Canvas(str(path), pagesize=(216, 144))
+        for (w, h), color in (((216, 144), RED), ((360, 288), BLUE)):
+            c.setPageSize((w, h))
+            c.setFillColor(color)
+            c.rect(20, 20, w - 40, h - 40, fill=1, stroke=0)
+            c.setFillColor(BLACK)
+            c.rect(30, 30, 10, 10, fill=1, stroke=0)
+            c.rect(50, 30, 10, 10, fill=1, stroke=0)
+            c.circle(w / 2, h / 2, 20, fill=1, stroke=0)
+            c.showPage()
+        c.save()
+    two_pages(out / "two_pages.pdf")
+    two_pages(out / "two_artboards.ai")   # multi-artboard Illustrator files are multi-page PDFs inside
+
+    # Page 1 is only a picture (a scan), page 2 is real vector art
+    c = canvas.Canvas(str(out / "scan_then_vector.pdf"), pagesize=(300, 200))
+    c.drawImage(str(out / "photo_900x600.png"), 0, 0, 300, 200)
+    c.showPage()
+    c.setFillColor(BLUE)
+    c.rect(20, 20, 260, 160, fill=1, stroke=0)
+    c.setFillColor(BLACK)
+    c.rect(30, 30, 10, 10, fill=1, stroke=0)
+    c.rect(50, 30, 10, 10, fill=1, stroke=0)
+    c.circle(150, 100, 20, fill=1, stroke=0)
     c.save()
 
     # Live (non-outlined) text: Helvetica is NOT embedded, Vera IS embedded
@@ -171,11 +192,6 @@ def main(out_dir):
         "showpage\n"
         "%%EOF\n"
     )
-
-    # 900 x 600 px image tagged 72 DPI: enough pixels for "borderline", not "good"
-    photo = Image.new("RGB", (900, 600), "white")
-    ImageDraw.Draw(photo).ellipse([100, 100, 800, 500], fill=(200, 0, 200))
-    photo.save(out / "photo_900x600.png", dpi=(72, 72))
 
     # Large logo that fades out to transparent (not allowed for DTFx / stickers)
     fade = Image.new("RGBA", (1500, 1500), (0, 0, 0, 0))
