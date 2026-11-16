@@ -362,6 +362,18 @@ def main(out_dir):
     pattern.end()
     pyembroidery.write_dst(pattern, str(out / "stitch.dst"))
 
+    # Two-color stitch file with real thread colors (PES keeps them, DST does not)
+    two = pyembroidery.EmbPattern()
+    two.add_thread({"color": 0xCC2222, "name": "Red"})
+    two.add_thread({"color": 0x1F3FBF, "name": "Blue"})
+    for i in range(60):
+        two.add_stitch_absolute(pyembroidery.STITCH, i * 10, (i % 2) * 80)
+    two.add_command(pyembroidery.COLOR_CHANGE)
+    for i in range(60):
+        two.add_stitch_absolute(pyembroidery.STITCH, i * 10, 200 + (i % 2) * 80)
+    two.add_command(pyembroidery.END)
+    pyembroidery.write(two, str(out / "two_color.pes"))
+
     # Vector logo with a photo placed in it: vector by format, not all vector
     from reportlab.lib.utils import ImageReader
     photo = Image.new("RGB", (120, 90))
