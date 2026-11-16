@@ -115,6 +115,8 @@ def check_home(app):
     body = page.locator('[data-testid="stMain"]').inner_text()
     expect("Supported:" not in body, "the separate 'Supported:' box is back; the uploader already lists the file types")
     expect("PDF" in body and "DST" in body and "PNG" in body, "the uploader no longer lists the accepted file types")
+    expect("XCF and INDD files are not currently supported." in body, "the XCF / INDD disclaimer is missing")
+    expect("upload them" not in body.lower(), "the page should not invite users to upload unsupported files")
     app.no_errors()
 
 
