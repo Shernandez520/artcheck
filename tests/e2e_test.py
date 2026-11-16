@@ -118,16 +118,75 @@ def check_home(app):
     expect("GIMP (.xcf) files are flattened to one image. InDesign (.indd) files show a small thumbnail only." in body,
            "the note about what GIMP and InDesign uploads get is missing")
     expect("upload them" not in body.lower(), "the page should not invite users to upload unsupported files")
-    # The page is designed dark; it must not depend on the visitor's own light / dark setting
-    bg = page.evaluate("getComputedStyle(document.querySelector('[data-testid=\"stApp\"]')).backgroundColor")
-    r, g, b = [int(v) for v in bg[bg.index("(") + 1:bg.index(")")].split(",")[:3]]
-    expect(max(r, g, b) < 60, f"the page background is {bg}; the dark theme is not applied")
+    # Dark is the default, whatever the visitor's own computer is set to
+    theme_button(page)
+    page.wait_for_timeout(1000)
+    expect(max(page_background(page)) < 60, f"the page background is {page_background(page)}; dark is not the default")
     expect(page.get_by_role("button", name="✨ No file handy? Try a sample logo").count() == 1,
            "the 'Try a sample logo' button is missing")
     # ArtBot: the question box sits directly under the chat window, above the example questions
     box_y = page.get_by_placeholder("Ask anything...").bounding_box()["y"]
     example_y = page.get_by_role("button", name="Difference between vector and raster?").bounding_box()["y"]
     expect(box_y < example_y, "ArtBot's question box is below the example questions")
+    app.no_errors()
+
+
+def page_background(page):
+    bg = page.evaluate("getComputedStyle(document.querySelector('[data-testid=\"stApp\"]')).backgroundColor")
+    return tuple(int(float(v)) for v in bg[bg.index("(") + 1:bg.index(")")].split(",")[:3])
+
+
+def theme_button(page):
+    """The sun / moon button (it lives in a small frame of its own)."""
+    for _ in range(40):
+        for frame in page.frames:
+            try:
+                if frame.locator("button#t").count():
+                    return frame.locator("button#t")
+            except Exception:
+                pass
+        page.wait_for_timeout(250)
+    raise AssertionError("the sun / moon theme button is missing")
+
+
+def check_theme_toggle(app):
+    page = app.fresh()
+    button = theme_button(page)
+    page.wait_for_timeout(1000)
+    expect(max(page_background(page)) < 60, "the page does not start dark")
+    expect(button.inner_text().strip() == "🌙", f"the button shows {button.inner_text()!r} in dark mode")
+    # a file is loaded first: switching must not reload the page or lose it
+    page.get_by_role("button", name="✨ No file handy? Try a sample logo").click()
+    page.get_by_text("Preview generated successfully").wait_for(timeout=90_000)
+    theme_button(page).click()
+    page.wait_for_timeout(1500)
+    expect(min(page_background(page)) > 230, f"after the click the page background is {page_background(page)}, not light")
+    expect(theme_button(page).inner_text().strip() == "☀️", "the button does not show the sun in light mode")
+    body = page.locator('[data-testid="stMain"]').inner_text()
+    expect("Preview generated successfully" in body and "PANTONE 289 C" in body, "switching the theme lost the file's results")
+    # ArtCheck's own elements follow: the tagline must be dark text on the light page
+    tagline = page.evaluate("""() => { const el = [...document.querySelectorAll('div')].find(d => d.children.length === 0
+        && d.textContent.trim().startsWith('Instant art file screening')); return getComputedStyle(el).color; }""")
+    r, g, b = [int(float(v)) for v in tagline[tagline.index("(") + 1:tagline.index(")")].split(",")[:3]]
+    expect(max(r, g, b) < 130, f"the tagline is {tagline} on a light page (too pale to read)")
+    chat_theme = None
+    for frame in page.frames:
+        try:
+            if frame.locator("#box").count():
+                chat_theme = frame.evaluate("document.documentElement.getAttribute('data-theme')")
+        except Exception:
+            pass
+    expect(chat_theme == "light", f"ArtBot's chat window did not switch to light (it says {chat_theme})")
+    # the choice survives a full reload
+    page.reload()
+    page.locator("input[type=file]").wait_for(state="attached", timeout=60_000)
+    theme_button(page)
+    page.wait_for_timeout(1500)
+    expect(min(page_background(page)) > 230, "the light choice was forgotten after a reload")
+    # and back to dark
+    theme_button(page).click()
+    page.wait_for_timeout(1500)
+    expect(max(page_background(page)) < 60, "switching back to dark did not work")
     app.no_errors()
 
 
@@ -878,6 +937,7 @@ def check_gimp_damaged(app):
 CHECKS = [
     ("App loads with uploader and ArtBot sidebar, one list of file types", check_home),
     ("'Try a sample logo' runs the whole check in one click", check_sample_file),
+    ("Sun / moon button switches light and dark without losing the file", check_theme_toggle),
     ("Vector file with a picture inside is labelled 'Vector + raster'", check_mixed_file_label),
     ("Vector PDF: preview, real size in inches, CMYK color analysis", check_vector_pdf),
     ("Mockup Builder gets the current file after switching files", check_mockup_after_switch),

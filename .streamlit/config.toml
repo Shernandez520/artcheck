@@ -7,8 +7,3 @@ enableStaticServing = true
 
 [browser]
 gatherUsageStats = false
-
-# The page is designed dark. Without this, visitors whose computer is set to
-# light mode get pale text on white and a dark chat box in a white sidebar.
-[theme]
-base = "dark"

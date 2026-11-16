@@ -6,6 +6,7 @@ Patch Streamlit's index.html at container startup:
      so shared links on LinkedIn/Facebook show ArtCheck, not "Streamlit"
   3. Inject GA4 analytics tag
   4. Inject WebSocket keepalive health ping (Railway proxy drops idle connections)
+  5. Set the dark theme as the default before the app paints
 Run this before launching Streamlit (see start.sh).
 """
 import glob
@@ -39,6 +40,22 @@ HEAD_SNIPPET = f"""
       function gtag(){{dataLayer.push(arguments);}}
       gtag('js', new Date());
       gtag('config', '{GA_ID}');
+    </script>
+    <!-- Theme: dark unless this visitor chose light with the sun / moon button.
+         Runs before Streamlit starts so a first visit does not flash white. -->
+    <script>
+      (function() {{
+        try {{
+          var key = 'stActiveTheme-' + window.location.pathname + '-v1';
+          var saved = null;
+          try {{ saved = (JSON.parse(localStorage.getItem(key)) || {{}}).name; }} catch (e) {{}}
+          if (saved !== 'Light' && saved !== 'Dark') {{
+            saved = 'Dark';
+            localStorage.setItem(key, JSON.stringify({{name: 'Dark'}}));
+          }}
+          document.documentElement.setAttribute('data-ac-theme', saved === 'Light' ? 'light' : 'dark');
+        }} catch (e) {{}}
+      }})();
     </script>
     <!-- HTTP health ping: belt-and-suspenders keepalive alongside Tornado WS pings -->
     <script>

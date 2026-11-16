@@ -407,9 +407,75 @@ if st.query_params.get("mockup"):
         st.error(f"Could not load Mockup Builder: {_err}")
     st.stop()
 
+# The sun / moon button. It runs in a small frame of its own and reaches into the
+# page (same origin):
+# - Streamlit keeps the visitor's theme in localStorage under stActiveTheme-<path>-v1
+#   and switches without a reload when it receives the SET_CUSTOM_THEME_CONFIG
+#   message its hosting platform uses. That message is only accepted from
+#   Streamlit's own hosts, so the event is created here with one of those origins.
+#   This relies on Streamlit 1.43 internals; the version is pinned and
+#   tests/e2e_test.py fails if it stops working.
+# - <html data-ac-theme="light|dark"> is what ArtCheck's own CSS keys on.
+# - Dark is the default: a first-time visitor is switched to dark, whatever their
+#   computer is set to. Their own choice is remembered by the browser.
+THEME_TOGGLE_HTML = """
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:transparent;overflow:hidden;}
+button{width:40px;height:40px;border-radius:10px;cursor:pointer;font-size:19px;line-height:1;
+       border:1px solid rgba(250,250,250,0.22);background:rgba(250,250,250,0.06);padding:0;}
+button:hover{background:rgba(250,250,250,0.14);}
+html[data-theme="light"] button{border-color:rgba(49,51,63,0.25);background:rgba(49,51,63,0.05);}
+html[data-theme="light"] button:hover{background:rgba(49,51,63,0.12);}
+</style></head><body>
+<button id="t" type="button" title="Switch between light and dark" aria-label="Switch between light and dark">🌙</button>
+<script>
+(function(){
+  var P = window.parent, root = P.document.documentElement, btn = document.getElementById('t');
+  var KEY = 'stActiveTheme-' + P.location.pathname + '-v1';
+  function saved(){ try { return (JSON.parse(P.localStorage.getItem(KEY)) || {}).name; } catch (e) { return null; } }
+  function send(name){
+    P.dispatchEvent(new P.MessageEvent('message', {
+      data: {stCommVersion: 1, type: 'SET_CUSTOM_THEME_CONFIG', themeName: name},
+      origin: 'https://share.streamlit.io'}));
+  }
+  function show(name){
+    var t = name === 'Light' ? 'light' : 'dark';
+    root.setAttribute('data-ac-theme', t);
+    document.documentElement.setAttribute('data-theme', t);
+    btn.textContent = t === 'light' ? '☀️' : '🌙';
+  }
+  var name = saved();
+  if (name !== 'Light' && name !== 'Dark') { name = 'Dark'; send('Dark'); }
+  show(name);
+  btn.addEventListener('click', function(){
+    var next = root.getAttribute('data-ac-theme') === 'light' ? 'Dark' : 'Light';
+    send(next); show(next);
+  });
+  // stay in step if the theme is changed from Streamlit's own settings menu
+  setInterval(function(){ var n = saved(); if (n === 'Light' || n === 'Dark') show(n); }, 1500);
+})();
+</script></body></html>
+"""
+
 # Custom CSS
 st.markdown("""
 <style>
+    /* ArtCheck's own colors, dark by default; <html data-ac-theme> is set by the sun / moon button */
+    :root {
+        --ac-tagline: #ccc; --ac-tip: #9cb4d8; --ac-rule: #333; --ac-muted: #aaa;
+        --ac-card-bg: #1a2535; --ac-card-title: #fff; --ac-card-text: #b0c4de;
+        --ac-card-accent: #a0d0b0; --ac-card-sub: #a0b8d0; --ac-card-hint: #556a7a;
+        --ac-warn-bg: #2a1f1f; --ac-warn-text: #ccc; --ac-warn-strong: #ff9999;
+    }
+    :root[data-ac-theme="light"] {
+        --ac-tagline: #4a4f5c; --ac-tip: #3b558f; --ac-rule: #d5d8e0; --ac-muted: #666;
+        --ac-card-bg: #e4ebf8; --ac-card-title: #16233a; --ac-card-text: #33435e;
+        --ac-card-accent: #1f7a43; --ac-card-sub: #3a5578; --ac-card-hint: #62738a;
+        --ac-warn-bg: #fbeaea; --ac-warn-text: #4a2a2a; --ac-warn-strong: #b3261e;
+    }
+    .st-key-theme_toggle {
+        position: absolute; top: 0.25rem; right: 0; width: 44px; z-index: 20;
+    }
     .success-box {
         padding: 1.5rem;
         border-radius: 0.5rem;
@@ -2433,6 +2499,7 @@ def artbot_chat_page(history):
 <html><head><meta charset="utf-8"><style>
 *{box-sizing:border-box;}
 html{color-scheme:dark;}
+html[data-theme="light"]{color-scheme:light;}
 html,body{margin:0;height:100%;background:transparent;}
 body{font-family:"Source Sans Pro",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   font-size:15px;line-height:1.5;color:#e0e0e0;}
@@ -2463,12 +2530,38 @@ body{font-family:"Source Sans Pro",-apple-system,BlinkMacSystemFont,"Segoe UI",R
 .bot table{border-collapse:collapse;margin:0 0 8px;font-size:0.92em;}
 .bot th,.bot td{border:1px solid rgba(255,255,255,0.25);padding:3px 6px;text-align:left;}
 .bot a{color:#9cc2ff;}
+/* Light version (the sun / moon button sets data-theme through the script below) */
+html[data-theme="light"] body{color:#1f2733;}
+html[data-theme="light"] #box{border-color:#b9c8e2;background:#ffffff;scrollbar-color:#9fb3d6 #ffffff;}
+html[data-theme="light"] #box::-webkit-scrollbar-track{background:#ffffff;}
+html[data-theme="light"] #box::-webkit-scrollbar-thumb{background:#9fb3d6;border-color:#ffffff;}
+html[data-theme="light"] .empty{color:#7a8291;}
+html[data-theme="light"] .empty span{color:#959dab;}
+html[data-theme="light"] .user{background:#dfe3ee;color:#1f2733;}
+html[data-theme="light"] .bot{background:#e4edfb;}
+html[data-theme="light"] .who{color:#4a6592;}
+html[data-theme="light"] .bot h1,html[data-theme="light"] .bot h2,html[data-theme="light"] .bot h3,
+html[data-theme="light"] .bot h4,html[data-theme="light"] .bot h5,html[data-theme="light"] .bot h6{color:#16233a;}
+html[data-theme="light"] .bot blockquote{border-left-color:#5b76d6;background:rgba(40,70,140,0.08);}
+html[data-theme="light"] .bot hr{border-top-color:rgba(20,40,80,0.2);}
+html[data-theme="light"] .bot code,html[data-theme="light"] .bot pre{background:rgba(20,40,80,0.09);}
+html[data-theme="light"] .bot th,html[data-theme="light"] .bot td{border-color:rgba(20,40,80,0.25);}
+html[data-theme="light"] .bot a{color:#1f56b3;}
 </style></head><body>
 <div id="box">""" + "".join(parts) + """</div>
 <script>
 // Show the newest question at the top of the box so its answer can be read from the start
 var box=document.getElementById('box'), asked=document.querySelectorAll('.user');
 if(asked.length){box.scrollTop=asked[asked.length-1].offsetTop-8;}
+// Follow the page's light / dark choice (set on the page's <html> by the sun / moon button)
+(function(){
+  try{
+    var root=window.parent.document.documentElement;
+    var sync=function(){document.documentElement.setAttribute('data-theme',root.getAttribute('data-ac-theme')==='light'?'light':'dark');};
+    sync();
+    new MutationObserver(sync).observe(root,{attributes:true,attributeFilter:['data-ac-theme']});
+  }catch(e){}
+})();
 </script>
 </body></html>"""
 
@@ -2567,19 +2660,19 @@ def _artbot_sidebar_body():
     file_ctx = st.session_state.get('artbot_file_context')
     if file_ctx:
         st.markdown(f"""
-<div style="background:#1a2535;border-radius:8px;padding:12px 14px;margin-bottom:10px;border-left:3px solid #28a745;">
-  <div style="font-size:1.3rem;font-weight:bold;color:#fff;margin-bottom:6px;">🤖 I can see your file!</div>
-  <div style="font-size:0.9rem;color:#a0d0b0;margin-bottom:6px;">📁 <strong>{html.escape(str(file_ctx['filename']))}</strong></div>
-  <div style="font-size:0.9rem;color:#b0c4de;">Ask me anything about this specific file — I have all the details ArtCheck found.</div>
+<div style="background:var(--ac-card-bg);border-radius:8px;padding:12px 14px;margin-bottom:10px;border-left:3px solid #28a745;">
+  <div style="font-size:1.3rem;font-weight:bold;color:var(--ac-card-title);margin-bottom:6px;">🤖 I can see your file!</div>
+  <div style="font-size:0.9rem;color:var(--ac-card-accent);margin-bottom:6px;">📁 <strong>{html.escape(str(file_ctx['filename']))}</strong></div>
+  <div style="font-size:0.9rem;color:var(--ac-card-text);">Ask me anything about this specific file — I have all the details ArtCheck found.</div>
 </div>
 """, unsafe_allow_html=True)
     else:
         st.markdown("""
-<div style="background:#1a2535;border-radius:8px;padding:12px 14px;margin-bottom:10px;border-left:3px solid #667eea;">
-  <div style="font-size:1.3rem;font-weight:bold;color:#fff;margin-bottom:6px;">🤖 Got a file issue? Ask me.</div>
-  <div style="font-size:0.95rem;color:#a0b8d0;margin-bottom:8px;">📁 File fixes &nbsp;·&nbsp; 🎨 Color questions &nbsp;·&nbsp; 🧵 Decoration methods &nbsp;·&nbsp; ✅ Best practices</div>
-  <div style="font-size:0.9rem;color:#b0c4de;">Tell me what's going on and I'll tell you exactly how to tackle it and what to say to your customer.</div>
-  <div style="font-size:0.78rem;color:#556a7a;margin-top:6px;">💡 Generate a preview first and I'll be able to speak to your specific file.</div>
+<div style="background:var(--ac-card-bg);border-radius:8px;padding:12px 14px;margin-bottom:10px;border-left:3px solid #667eea;">
+  <div style="font-size:1.3rem;font-weight:bold;color:var(--ac-card-title);margin-bottom:6px;">🤖 Got a file issue? Ask me.</div>
+  <div style="font-size:0.95rem;color:var(--ac-card-sub);margin-bottom:8px;">📁 File fixes &nbsp;·&nbsp; 🎨 Color questions &nbsp;·&nbsp; 🧵 Decoration methods &nbsp;·&nbsp; ✅ Best practices</div>
+  <div style="font-size:0.9rem;color:var(--ac-card-text);">Tell me what's going on and I'll tell you exactly how to tackle it and what to say to your customer.</div>
+  <div style="font-size:0.78rem;color:var(--ac-card-hint);margin-top:6px;">💡 Generate a preview first and I'll be able to speak to your specific file.</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -2704,8 +2797,8 @@ def _artbot_sidebar_body():
         st.rerun()
 
     st.markdown("""
-<div style="background:#2a1f1f;border-radius:6px;padding:8px 12px;margin-top:8px;border-left:3px solid #cc4444;font-size:0.78rem;color:#ccc;">
-⚠️ <strong style="color:#ff9999;">Disclaimer:</strong> ArtBot is an AI assistant and may occasionally make mistakes. Always confirm critical production specs with your decorator or supplier before production. Pricing guidance is approximate.
+<div style="background:var(--ac-warn-bg);border-radius:6px;padding:8px 12px;margin-top:8px;border-left:3px solid #cc4444;font-size:0.78rem;color:var(--ac-warn-text);">
+⚠️ <strong style="color:var(--ac-warn-strong);">Disclaimer:</strong> ArtBot is an AI assistant and may occasionally make mistakes. Always confirm critical production specs with your decorator or supplier before production. Pricing guidance is approximate.
 </div>
 """, unsafe_allow_html=True)
 
@@ -2733,12 +2826,19 @@ def render_artbot_sidebar():
 # FILE UPLOAD SECTION
 # ============================================================================
 
+# Light / dark switch, top right (same sun and moon as the Mockup Builder).
+# Streamlit has no Python call for changing the theme, so the button talks to
+# the page directly: see THEME_TOGGLE_HTML.
+import streamlit.components.v1 as _theme_components
+with st.container(key="theme_toggle"):
+    _theme_components.html(THEME_TOGGLE_HTML, height=44, scrolling=False)
+
 st.markdown("""
 <div style="padding:2rem 0 1.5rem 0;">
     <div style="font-size:2.8rem;font-weight:800;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1.1;margin-bottom:0.5rem;">
         🎨 ArtCheck
     </div>
-    <div style="font-size:1.25rem;color:#ccc;font-weight:400;margin-bottom:1rem;">
+    <div style="font-size:1.25rem;color:var(--ac-tagline);font-weight:400;margin-bottom:1rem;">
         Instant art file screening for promotional products professionals.
     </div>
     <div style="font-size:0.95rem;color:#888;max-width:720px;line-height:1.7;">
@@ -2748,13 +2848,13 @@ st.markdown("""
         Ask ArtBot in the sidebar for expert guidance on file requirements, decoration methods, 
         and what to tell your customer.
     </div>
-    <div style="font-size:0.9rem;color:#9cb4d8;max-width:720px;line-height:1.6;margin-top:0.85rem;padding:0.65rem 0.9rem;background:rgba(102,126,234,0.08);border-left:3px solid #667eea;border-radius:4px;">
+    <div style="font-size:0.9rem;color:var(--ac-tip);max-width:720px;line-height:1.6;margin-top:0.85rem;padding:0.65rem 0.9rem;background:rgba(102,126,234,0.08);border-left:3px solid #667eea;border-radius:4px;">
         💡 <strong>Need a customer mockup?</strong> Analyze your art file, download the trimmed transparent PNG, 
         then use the built-in <strong>Mockup Builder</strong> to drop it onto any product photo — 
         no SAGE login required.
     </div>
 </div>
-<hr style="border:none;border-top:1px solid #333;margin-bottom:1.5rem;">
+<hr style="border:none;border-top:1px solid var(--ac-rule);margin-bottom:1.5rem;">
 """, unsafe_allow_html=True)
 
 st.markdown("## 📁 Upload Your File")
@@ -3316,7 +3416,16 @@ body{background:#111;overflow:hidden;width:100%;height:490px;}
 .ctrl-btn{background:#222;color:#aaa;border:1px solid #444;border-radius:4px;
   padding:4px 10px;font-size:0.75rem;cursor:pointer;font-family:sans-serif;}
 .ctrl-btn:hover{background:#333;color:#fff;}
+/* light version: the frame around the preview follows the page's sun / moon choice */
+html[data-theme="light"] body,html[data-theme="light"] #viewport{background:#eceef3;}
+html[data-theme="light"] .ctrl-btn{background:#fff;color:#555;border-color:#c5c9d3;}
+html[data-theme="light"] .ctrl-btn:hover{background:#f1f2f6;color:#111;}
 </style></head><body>
+<script>
+(function(){try{var r=window.parent.document.documentElement;
+var f=function(){document.documentElement.setAttribute('data-theme',r.getAttribute('data-ac-theme')==='light'?'light':'dark');};
+f();new MutationObserver(f).observe(r,{attributes:true,attributeFilter:['data-ac-theme']});}catch(e){}})();
+</script>
 <div id="viewport">
   <img id="img" src="data:image/png;base64,IMG_B64" draggable="false"/>
   <div id="controls">
@@ -3425,7 +3534,7 @@ Despite the file extension, this is not a true vector file. It's a raster image 
                         f'<div style="text-align:center;">'
                         f'<div style="background:{c["hex"]};width:36px;height:36px;'
                         f'border-radius:4px;border:{border};"></div>'
-                        f'<div style="font-size:0.65rem;color:#aaa;margin-top:2px;">{c["hex"]}</div>'
+                        f'<div style="font-size:0.65rem;color:var(--ac-muted);margin-top:2px;">{c["hex"]}</div>'
                         f'</div>'
                     )
                 swatch_html += '</div>'
