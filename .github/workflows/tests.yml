@@ -65,6 +65,9 @@ jobs:
       - name: Check the InDesign thumbnail reader
         run: python tests/test_indd_tools.py
 
+      - name: Check the WebSocket keep-alive patch is applied once
+        run: python tests/test_ws_keepalive.py
+
       - name: Create sample art files
         run: python tests/make_fixtures.py "$RUNNER_TEMP/fixtures"
 

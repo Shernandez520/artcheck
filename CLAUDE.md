@@ -316,7 +316,14 @@ Handoff via `@st.cache_resource` dict — single-use tokens, 5-minute expiry.
 
 ### WebSocket stability (do not remove)
 Railway's proxy drops idle WebSockets. Three layers:
-1. Tornado server-side WS pings
+1. Tornado server-side WS pings: `ws_keepalive.py`, imported at the top of the app.
+   **Never patch anything from inside `app_with_embroidery.py` itself.** Streamlit
+   re-runs that file on every click. The ping patch used to sit there, so each
+   run wrapped the previous wrapper, and the chain kept every run's variables
+   alive forever: about 80 MB per large preview, never freed (1.2 GB over one
+   browser-test run; now it peaks near 320 MB and falls back to 150 MB). This
+   was the cause of the server running out of memory. A module is imported once;
+   `tests/test_ws_keepalive.py` checks the patch is applied once.
 2. Client health ping injected by `inject_ga.py`
 3. `start.sh` flags: `enableWebsocketCompression=false`, `fileWatcherType=none`,
    `browser.serverAddress=www.artcheck.app`, `browser.serverPort=443`
@@ -328,6 +335,10 @@ Railway's proxy drops idle WebSockets. Three layers:
   `-dev` headers pull ~100 packages and cause boot timeouts
 
 ### Memory notes (small instance)
+- If memory climbs with use, look for something long-lived holding a reference
+  to script-level variables (a patch, a callback, a cache). Measure with RSS
+  across 15 "upload + Generate" sessions on `letter_page.pdf`: it should level
+  off around 250 MB.
 - Keep heavy imports (cairosvg, fitz, pdf2image) lazy — inside methods
 - `get_preview_generator()` / `get_color_extractor()` build a fresh object per call
   (they hold no state worth caching)

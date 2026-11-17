@@ -4,21 +4,10 @@ Previews, color analysis, font check, decoration method check, vector PDF export
 and the ArtBot assistant. See CLAUDE.md for how the pieces fit together.
 """
 
-# Patch Tornado to send server-side WebSocket pings — prevents Railway proxy
-# from force-closing connections after its absolute idle/connection limit.
-# Must run before Streamlit starts its server, so it goes here at module top.
-try:
-    import tornado.websocket as _tws
-    _orig_get = _tws.WebSocketHandler.get
-
-    async def _ws_get_with_ping(self, *args, **kwargs):
-        self.application.settings.setdefault('websocket_ping_interval', 20)
-        self.application.settings.setdefault('websocket_ping_timeout', 60)
-        return await _orig_get(self, *args, **kwargs)
-
-    _tws.WebSocketHandler.get = _ws_get_with_ping
-except Exception:
-    pass
+# Server-side WebSocket pings (Railway's proxy drops idle connections). The patch
+# lives in its own module because this file is re-run on every click and the patch
+# must be applied once per process: see ws_keepalive.py for what went wrong before.
+import ws_keepalive  # noqa: F401
 
 import streamlit as st
 import subprocess
