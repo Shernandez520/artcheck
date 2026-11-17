@@ -2736,10 +2736,26 @@ def _artbot_sidebar_body():
         # and that used to leave the question in the chat with no answer and no
         # error. Now the next run simply asks again.
         q = st.session_state.artbot_pending
+        # ...but only once. If the run is cut off again (a connection that keeps
+        # dropping), asking a third time would turn into an endless refresh loop,
+        # each round a new paid API call. Stop and say so instead.
+        _attempts = st.session_state.get('artbot_attempts', 0) + 1
+        st.session_state['artbot_attempts'] = _attempts
+        if _attempts > 2:
+            _history = st.session_state.artbot_history
+            if not (_history and _history[-1] == {"role": "user", "content": q}):
+                _history.append({"role": "user", "content": q})
+            _history.append({"role": "assistant", "content":
+                             "⚠️ ArtBot was interrupted twice while answering: the page lost its connection "
+                             "to the server. Give it a moment, then ask again."})
+            st.session_state.artbot_pending = None
+            st.session_state['artbot_attempts'] = 0
+            st.rerun()
         with st.spinner("🤖 ArtBot is thinking..."):
             _run_artbot(q)
         if st.session_state.artbot_pending == q:
             st.session_state.artbot_pending = None
+        st.session_state['artbot_attempts'] = 0
         st.rerun()
 
     # Chat history label
@@ -2773,6 +2789,7 @@ def _artbot_sidebar_body():
         for ex in examples:
             if st.button(ex, use_container_width=True, key=f"ex_{ex}"):
                 st.session_state.artbot_pending = ex
+                st.session_state['artbot_attempts'] = 0
                 st.rerun()
 
     if st.session_state.artbot_history:
@@ -2784,6 +2801,7 @@ def _artbot_sidebar_body():
 
     if send and question_input.strip():
         st.session_state.artbot_pending = question_input.strip()
+        st.session_state['artbot_attempts'] = 0
         st.session_state.artbot_input_key += 1
         st.rerun()
 

@@ -208,7 +208,9 @@ Streamlit abandons a running script as soon as the user clicks anything else (or
 the browser reconnects); the abandoned run's answer is lost. Clearing `pending`
 before the API call left the question in the chat with no answer and no error.
 `_run_artbot()` therefore tolerates being called again for a question already in
-the history. The client has a 60 s timeout; an empty answer becomes a message.
+the history. It is asked again ONCE (`artbot_attempts`): on a connection that
+keeps dropping, unlimited retries became an endless refresh loop, each round a
+new paid API call. After two cut-off attempts the chat shows a message instead. The client has a 60 s timeout; an empty answer becomes a message.
 The file context includes `pdf_export` (path and embedded-image counts) so
 ArtBot can answer "is this really vector?".
 
