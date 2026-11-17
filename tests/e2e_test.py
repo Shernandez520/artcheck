@@ -971,6 +971,9 @@ def check_gimp_preview(app):
            "the layer summary for the GIMP file is missing or wrong")
     expect(metrics(page).get("Dimensions") == "300 × 200 px", f"Dimensions show {metrics(page).get('Dimensions')}")
     expect('1.0" × 0.67"' in body, "the 300 dpi print size (1.0\" × 0.67\") is missing: resolution not read from the GIMP file")
+    # 300 x 200 px at 300 dpi: ready, but only for a small imprint, and the banner says so
+    expect('Production Ready up to 1.0" × 0.67" at 300 dpi' in body and "small imprints" in body,
+           "the green verdict does not say what size the image is ready for")
     expect("Decoration Method Check" in body, "the Decoration Method Check is missing for a GIMP file")
     expect("could not be opened" not in body and "Files Not Supported" not in body, "a readable GIMP file was refused")
     with page.expect_download(timeout=30_000) as dl:

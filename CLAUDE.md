@@ -90,6 +90,10 @@ rest is in compressed private data). There is nothing to pick for those formats.
 Reads DPI from Pillow metadata, computes usable print sizes at 300/200 DPI,
 verdicts (Production Ready / Marginal / Not Suitable), flags 72 DPI as likely
 web graphics, recommends what to request from the customer.
+The green verdict states its size ("Production Ready up to W × H at 300 dpi"),
+because an image saved at 300 dpi is "good" at any pixel count: a small one is
+right for a pen barrel and wrong for a jacket back (owner's decision, Nov 2026:
+keep small 300 dpi images green, but say the size).
 The raster flow analyzes an upload once and keeps the result in
 `st.session_state['_raster_analysis']` (`{id, analysis}`); later reruns (method
 picker, ArtBot) reuse it. The image itself is always shown from the uploader.

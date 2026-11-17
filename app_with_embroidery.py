@@ -1237,7 +1237,13 @@ def render_raster_results(analysis, filename):
 
     # Verdict banner
     if verdict == 'good':
-        st.markdown('''<div style="padding:12px;border-radius:8px;background:#1a6b3a;color:#fff;font-size:1rem;font-weight:bold;margin-bottom:12px;">✅ Production Ready — This image has enough detail for printing</div>''', unsafe_allow_html=True)
+        # "Ready" always means "ready up to a size". A small image saved at 300 dpi is
+        # right for a pen barrel and wrong for a jacket back, so the banner says the size.
+        _good = sizes.get('300dpi', (0, 0))
+        _small = max(_good) < 2.0
+        _detail = (f'up to {_good[0]}" × {_good[1]}" at 300 dpi'
+                   + (' — right for small imprints such as pens; too small for larger ones' if _small else ''))
+        st.markdown(f'''<div style="padding:12px;border-radius:8px;background:#1a6b3a;color:#fff;font-size:1rem;font-weight:bold;margin-bottom:12px;">✅ Production Ready {_detail}</div>''', unsafe_allow_html=True)
     elif verdict == 'marginal':
         st.markdown('''<div style="padding:12px;border-radius:8px;background:#7d5a00;color:#fff;font-size:1rem;font-weight:bold;margin-bottom:12px;">⚠️ Borderline Quality — May work for small print sizes only</div>''', unsafe_allow_html=True)
     else:
@@ -2590,7 +2596,11 @@ def build_artbot_system_prompt():
         lines.append(f"Color mode: {ctx['color_mode']}")
     if ctx.get('verdict'):
         verdict_map = {'good': 'Production Ready', 'marginal': 'Borderline Quality', 'poor': 'Not Suitable for Production'}
-        lines.append(f"ArtCheck verdict: {verdict_map.get(ctx['verdict'], ctx['verdict'])}")
+        _verdict_line = f"ArtCheck verdict: {verdict_map.get(ctx['verdict'], ctx['verdict'])}"
+        if ctx.get('verdict') == 'good' and ctx.get('width') and ctx.get('height'):
+            _verdict_line += (f" up to {round(ctx['width'] / 300, 2)}\" × {round(ctx['height'] / 300, 2)}\" at 300 dpi "
+                              "(larger imprints would print below 300 dpi)")
+        lines.append(_verdict_line)
     if ctx.get('warnings'):
         lines.append(f"Warnings flagged: {'; '.join(ctx['warnings'])}")
 
