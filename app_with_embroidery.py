@@ -4,21 +4,10 @@ Previews, color analysis, font check, decoration method check, vector PDF export
 and the ArtBot assistant. See CLAUDE.md for how the pieces fit together.
 """
 
-# Patch Tornado to send server-side WebSocket pings — prevents Railway proxy
-# from force-closing connections after its absolute idle/connection limit.
-# Must run before Streamlit starts its server, so it goes here at module top.
-try:
-    import tornado.websocket as _tws
-    _orig_get = _tws.WebSocketHandler.get
-
-    async def _ws_get_with_ping(self, *args, **kwargs):
-        self.application.settings.setdefault('websocket_ping_interval', 20)
-        self.application.settings.setdefault('websocket_ping_timeout', 60)
-        return await _orig_get(self, *args, **kwargs)
-
-    _tws.WebSocketHandler.get = _ws_get_with_ping
-except Exception:
-    pass
+# Server-side WebSocket pings (Railway's proxy drops idle connections). The patch
+# lives in its own module because this file is re-run on every click and the patch
+# must be applied once per process: see ws_keepalive.py for what went wrong before.
+import ws_keepalive  # noqa: F401
 
 import streamlit as st
 import subprocess
@@ -1237,7 +1226,13 @@ def render_raster_results(analysis, filename):
 
     # Verdict banner
     if verdict == 'good':
-        st.markdown('''<div style="padding:12px;border-radius:8px;background:#1a6b3a;color:#fff;font-size:1rem;font-weight:bold;margin-bottom:12px;">✅ Production Ready — This image has enough detail for printing</div>''', unsafe_allow_html=True)
+        # "Ready" always means "ready up to a size". A small image saved at 300 dpi is
+        # right for a pen barrel and wrong for a jacket back, so the banner says the size.
+        _good = sizes.get('300dpi', (0, 0))
+        _small = max(_good) < 2.0
+        _detail = (f'up to {_good[0]}" × {_good[1]}" at 300 dpi'
+                   + (' — right for small imprints such as pens; too small for larger ones' if _small else ''))
+        st.markdown(f'''<div style="padding:12px;border-radius:8px;background:#1a6b3a;color:#fff;font-size:1rem;font-weight:bold;margin-bottom:12px;">✅ Production Ready {_detail}</div>''', unsafe_allow_html=True)
     elif verdict == 'marginal':
         st.markdown('''<div style="padding:12px;border-radius:8px;background:#7d5a00;color:#fff;font-size:1rem;font-weight:bold;margin-bottom:12px;">⚠️ Borderline Quality — May work for small print sizes only</div>''', unsafe_allow_html=True)
     else:
@@ -2590,7 +2585,11 @@ def build_artbot_system_prompt():
         lines.append(f"Color mode: {ctx['color_mode']}")
     if ctx.get('verdict'):
         verdict_map = {'good': 'Production Ready', 'marginal': 'Borderline Quality', 'poor': 'Not Suitable for Production'}
-        lines.append(f"ArtCheck verdict: {verdict_map.get(ctx['verdict'], ctx['verdict'])}")
+        _verdict_line = f"ArtCheck verdict: {verdict_map.get(ctx['verdict'], ctx['verdict'])}"
+        if ctx.get('verdict') == 'good' and ctx.get('width') and ctx.get('height'):
+            _verdict_line += (f" up to {round(ctx['width'] / 300, 2)}\" × {round(ctx['height'] / 300, 2)}\" at 300 dpi "
+                              "(larger imprints would print below 300 dpi)")
+        lines.append(_verdict_line)
     if ctx.get('warnings'):
         lines.append(f"Warnings flagged: {'; '.join(ctx['warnings'])}")
 
