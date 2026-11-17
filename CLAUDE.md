@@ -375,8 +375,9 @@ handoff, render cap, Auto background, sizes, multi-page notice, Font Check,
 Decoration Method Check, vector PDF export (the downloaded PDF is opened and
 checked for paths, images, page size and spot colors). Unit tests run in the same job:
 `tests/test_decoration_rules.py` (rules), `tests/test_cdr_tools.py` (CorelDRAW
-helper), `tests/test_xcf_tools.py` (GIMP reader against GIMP's own exports) and
-`tests/test_indd_tools.py` (InDesign thumbnail). It also fails if temp files are left in
+helper), `tests/test_xcf_tools.py` (GIMP reader against GIMP's own exports),
+`tests/test_indd_tools.py` (InDesign thumbnail) and `tests/test_ws_keepalive.py`
+(the WebSocket ping patch is applied once). It also fails if temp files are left in
 `/tmp` or the container is OOM-killed. Sample files come from
 `tests/make_fixtures.py` — no real artwork in the repo (the only binary samples
 are the generated-shape GIMP files in `tests/data/xcf`). GA requests are blocked.
